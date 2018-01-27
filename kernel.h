@@ -41,4 +41,7 @@ union psrValues {
 #define MAXPRIORITY 1
 #define SENTINELPID 1
 #define SENTINELPRIORITY (MINPRIORITY + 1)
+#define READYSTATUS 1
+#define JOINBLOCKSTATUS 2
+#define QUITSTATUS 3
 

@@ -30,7 +30,7 @@ int debugflag = 1;
 procStruct ProcTable[MAXPROC];
 
 // Process lists
-static procPtr ReadyList;
+static procPtr ReadyList[6];
 
 // current process ID
 procPtr Current;
@@ -52,6 +52,7 @@ void startup(int argc, char *argv[])
 {
     int result; /* value returned by call to fork1() */
 
+    Current = NULL;
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
@@ -59,7 +60,10 @@ void startup(int argc, char *argv[])
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
-    ReadyList = NULL;
+    int i;
+    for (i = 0; i < 6; i++){
+        ReadyList[i] = NULL;
+    }
 
     // Initialize the clock interrupt handler
 
@@ -85,6 +89,7 @@ void startup(int argc, char *argv[])
         USLOSS_Console("halting...\n");
         USLOSS_Halt(1);
     }
+    Current = &ProcTable[result];
 
     USLOSS_Console("startup(): Should not see this message! ");
     USLOSS_Console("Returned from fork1 call that created start1\n");
@@ -128,23 +133,22 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         USLOSS_Console("fork1(): creating process %s\n", name);
 
     // test if in kernel mode; halt if in user mode
-/*
-     * How to find out what mode is? Is it in the ProcStruct?
-     */
-
+    if (USLOSS_PSR_CURRENT_MODE == 0){
+        USLOSS_Halt(1);
+    }
     // Return if stack size is too small
     if ( stacksize < USLOSS_MIN_STACK )
         return -2;
 
     // Is there room in the process table? What is the next PID?
-    if ( priority < 1 or priority > 6 or startFunc == NULL or name == NULL )
+    if ( priority < 1 || priority > 6 || startFunc == NULL || name == NULL )
         return -1;
         
     procSlot = nextPid % MAXPROC;
     procPid = nextPid;
     count = 1;
     
-    while (ProcTable[procSlot] != NULL){
+    while (ProcTable[procSlot].pid != 0){
         procPid++;
         procSlot = procPid % MAXPROC;
         count++;
@@ -172,9 +176,14 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     else
         strcpy(ProcTable[procSlot].startArg, arg);
         
-    ProcTable[procSlot].stack = (char*)malloc(stackSize);
-    ProcTable[procSlot].stackSize = stackSize;
+    ProcTable[procSlot].pid = procPid;
+    ProcTable[procSlot].stack = (char*)malloc(stacksize);
+    ProcTable[procSlot].stackSize = stacksize;
     ProcTable[procSlot].parentProcPtr = Current;
+    ProcTable[procSlot].childProcPtr = NULL;
+    ProcTable[procSlot].nextSiblingPtr = NULL;
+    ProcTable[procSlot].status = READYSTATUS;
+    ProcTable[procSlot].priority = priority;
 
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
@@ -189,7 +198,28 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
-    Current
+    procPtr temp;
+    
+    if (ReadyList[priority - 1] == NULL){
+        ReadyList[priority - 1] = &ProcTable[procSlot];
+    }else{
+        temp = ReadyList[priority - 1];
+        while((*temp).nextProcPtr != NULL){
+            temp = (*temp).nextProcPtr;
+        }
+        (*temp).nextProcPtr = &ProcTable[procSlot];
+    }
+    if (Current != NULL){
+        if ((*Current).childProcPtr == NULL){
+            (*Current).childProcPtr = &ProcTable[procSlot];
+        }else{
+            temp = (*Current).childProcPtr;
+            while((*temp).nextSiblingPtr != NULL){
+                temp = (*temp).nextSiblingPtr;
+            }
+            (*temp).nextSiblingPtr = &ProcTable[procSlot];
+        }
+    }
     return procSlot;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
@@ -235,9 +265,6 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
-/*
-    * What exactly is blocking? How do we indicate it?
-    */
     return -1;  // -1 is not correct! Here to prevent warning.
 } /* join */
 
@@ -270,7 +297,13 @@ void quit(int status)
 void dispatcher(void)
 {
     procPtr nextProcess = NULL;
-
+    
+    int i;
+    for (i = 0; i < 6; i++){
+        if (ReadyList[i] != NULL){
+            nextProcess = ReadyList[i];
+        }
+    }
     p1_switch(Current->pid, nextProcess->pid);
 } /* dispatcher */
 
