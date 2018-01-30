@@ -6,10 +6,11 @@ typedef struct procStruct procStruct;
 typedef struct procStruct * procPtr;
 
 struct procStruct {
-   procPtr         parentProcPtr;
    procPtr         nextProcPtr;
+   procPtr         parentProcPtr;
    procPtr         childProcPtr;
    procPtr         nextSiblingPtr;
+   procPtr         quitChildPtr;
    char            name[MAXNAME];     /* process's name */
    char            startArg[MAXARG];  /* args passed to process */
    USLOSS_Context  state;             /* current context for process */
@@ -18,7 +19,7 @@ struct procStruct {
    int (* startFunc) (char *);   /* function where process begins -- launch */
    char           *stack;
    unsigned int    stackSize;
-   int             status;        /* READY, JoinBlock, BLOCKED, QUIT, etc. */
+   int             status;        /* READY, BLOCKED, QUIT, etc. */
    /* other fields as needed... */
 };
 
@@ -41,7 +42,8 @@ union psrValues {
 #define MAXPRIORITY 1
 #define SENTINELPID 1
 #define SENTINELPRIORITY (MINPRIORITY + 1)
-#define READYSTATUS 1
-#define JOINBLOCKSTATUS 2
-#define QUITSTATUS 3
 
+#define EMPTYSTATUS 0
+#define READYSTATUS 1
+#define RUNSTATUS 2
+#define QUITSTATUS 3

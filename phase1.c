@@ -15,10 +15,15 @@
 #include "kernel.h"
 
 /* ------------------------- Prototypes ----------------------------------- */
+void illegalInstructionHandler(int dev, void *arg);
+
 int sentinel (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
+void initProcTable();
+void initProc(int);
+void readyUp(procPtr, int);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -38,6 +43,9 @@ procPtr Current;
 // the next pid to be assigned
 unsigned int nextPid = SENTINELPID;
 
+// number of processes
+int numProcs = 0;
+
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -50,9 +58,9 @@ unsigned int nextPid = SENTINELPID;
    ----------------------------------------------------------------------- */
 void startup(int argc, char *argv[])
 {
-    int result; /* value returned by call to fork1() */
+    int result, /* value returned by call to fork1() */
+        i;
 
-    Current = NULL;
     /* initialize the process table */
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing process table, ProcTable[]\n");
@@ -60,10 +68,15 @@ void startup(int argc, char *argv[])
     // Initialize the Ready list, etc.
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): initializing the Ready list\n");
-    int i;
     for (i = 0; i < 6; i++){
         ReadyList[i] = NULL;
     }
+    
+    initProcTable();
+    Current = &ProcTable[0];
+
+    // Initialize the illegalInstruction interrupt handler
+    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalInstructionHandler;
 
     // Initialize the clock interrupt handler
 
@@ -89,7 +102,6 @@ void startup(int argc, char *argv[])
         USLOSS_Console("halting...\n");
         USLOSS_Halt(1);
     }
-    Current = &ProcTable[result];
 
     USLOSS_Console("startup(): Should not see this message! ");
     USLOSS_Console("Returned from fork1 call that created start1\n");
@@ -125,42 +137,47 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-    int procSlot = -1,
-        procPid,
-        count;
+    int procSlot = -1;
 
     if (DEBUG && debugflag)
         USLOSS_Console("fork1(): creating process %s\n", name);
 
     // test if in kernel mode; halt if in user mode
-    if (USLOSS_PSR_CURRENT_MODE == 0){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("fork1(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
     // Return if stack size is too small
-    if ( stacksize < USLOSS_MIN_STACK )
+    if (stacksize < USLOSS_MIN_STACK){
+        USLOSS_Console("fork1(): Stack size too small.");
         return -2;
-
+    }
     // Is there room in the process table? What is the next PID?
-    if ( priority < 1 || priority > 6 || startFunc == NULL || name == NULL )
+    if (numProcs == MAXPROC){
+        USLOSS_Console("fork1(): No room in table.");
         return -1;
-        
-    procSlot = nextPid % MAXPROC;
-    procPid = nextPid;
-    count = 1;
-    
-    while (ProcTable[procSlot].pid != 0){
-        procPid++;
-        procSlot = procPid % MAXPROC;
-        count++;
-        if (count == MAXPROC){
-            return -1;
-        }
+    }
+    if (name == NULL){
+        USLOSS_Console("fork1(): Name is NULL.");
+        return -1;
+    }
+    if (startFunc == NULL){
+        USLOSS_Console("fork1(): Start function is NULL.");
+        return -1;
+    }
+    if (priority < 1 || (priority > 5 && startFunc != sentinel)){
+        USLOSS_Console("fork1(): Priority out of range.");
+        return -1;
     }
     
-    nextPid = procPid + 1;
+    // Find empty slot in table
+    do{
+        procSlot = nextPid % MAXPROC;
+        nextPid++;
+    }while (ProcTable[procSlot].status != EMPTYSTATUS);
+    
 
     // fill-in entry in process table */
-
     if ( strlen(name) >= (MAXNAME - 1) ) {
         USLOSS_Console("fork1(): Process name is too long.  Halting...\n");
         USLOSS_Halt(1);
@@ -175,15 +192,13 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     }
     else
         strcpy(ProcTable[procSlot].startArg, arg);
-        
-    ProcTable[procSlot].pid = procPid;
+    ProcTable[procSlot].pid = nextPid - 1;
+    ProcTable[procSlot].priority = priority;
+    readyUp(&ProcTable[procSlot], priority - 1);
+    if (Current->pid > 1)
+        ProcTable[procSlot].parentProcPtr = Current;
     ProcTable[procSlot].stack = (char*)malloc(stacksize);
     ProcTable[procSlot].stackSize = stacksize;
-    ProcTable[procSlot].parentProcPtr = Current;
-    ProcTable[procSlot].childProcPtr = NULL;
-    ProcTable[procSlot].nextSiblingPtr = NULL;
-    ProcTable[procSlot].status = READYSTATUS;
-    ProcTable[procSlot].priority = priority;
 
     // Initialize context for this process, but use launch function pointer for
     // the initial value of the process's program counter (PC)
@@ -198,28 +213,24 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     p1_fork(ProcTable[procSlot].pid);
 
     // More stuff to do here...
-    procPtr temp;
-    
-    if (ReadyList[priority - 1] == NULL){
-        ReadyList[priority - 1] = &ProcTable[procSlot];
-    }else{
-        temp = ReadyList[priority - 1];
-        while((*temp).nextProcPtr != NULL){
-            temp = (*temp).nextProcPtr;
-        }
-        (*temp).nextProcPtr = &ProcTable[procSlot];
-    }
-    if (Current != NULL){
-        if ((*Current).childProcPtr == NULL){
-            (*Current).childProcPtr = &ProcTable[procSlot];
+    if (Current->pid > 1){
+        if (Current->childProcPtr == NULL){
+            Current->childProcPtr = &ProcTable[procSlot];
         }else{
-            temp = (*Current).childProcPtr;
-            while((*temp).nextSiblingPtr != NULL){
-                temp = (*temp).nextSiblingPtr;
+            procPtr temp = Current->childProcPtr;
+            while (temp->nextSiblingPtr != NULL){
+                temp = temp->nextSiblingPtr;
             }
-            (*temp).nextSiblingPtr = &ProcTable[procSlot];
+            temp->nextSiblingPtr = &ProcTable[procSlot];
         }
     }
+    numProcs++;
+    
+    if (ProcTable[procSlot].pid != 1){
+        dispatcher();
+printf("%s\n", ProcTable[procSlot].name);
+    }
+
     return procSlot;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
@@ -296,15 +307,36 @@ void quit(int status)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("dispatcher(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
     procPtr nextProcess = NULL;
-    
     int i;
+    
     for (i = 0; i < 6; i++){
         if (ReadyList[i] != NULL){
             nextProcess = ReadyList[i];
+            ReadyList[i] = ReadyList[i]->nextProcPtr;
+            break;
         }
     }
-    p1_switch(Current->pid, nextProcess->pid);
+
+printf("Next Process:%s\n", nextProcess->name);
+    
+    if (Current->status == RUNSTATUS){
+        readyUp(Current, Current->priority - 1);
+    }
+    //p1_switch(Current->pid, nextProcess->pid);
+    //enable interrupts
+    if (Current->status == EMPTYSTATUS || Current->status == QUITSTATUS)
+        USLOSS_ContextSwitch(NULL, &nextProcess->state);
+    else
+        USLOSS_ContextSwitch(&Current->state, &nextProcess->state);
+        
+    Current = nextProcess;
+    Current->status = RUNSTATUS;
+    
 } /* dispatcher */
 
 
@@ -345,5 +377,67 @@ void disableInterrupts()
     // turn the interrupts OFF iff we are in kernel mode
     // if not in kernel mode, print an error message and
     // halt USLOSS
+    if ((0x1 & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    USLOSS_PsrSet(USLOSS_PsrGet() ^ (USLOSS_PsrGet() & 0x2));
 
 } /* disableInterrupts */
+
+/*
+ * Enable the interrupts.
+ */
+void enableInterrupts()
+{
+    // turn the interrupts OFF iff we are in kernel mode
+    // if not in kernel mode, print an error message and
+    // halt USLOSS
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);	
+
+} /* enableInterrupts */
+
+
+void illegalInstructionHandler(int dev, void *arg)
+{
+    if (DEBUG && debugflag)
+        USLOSS_Console("illegalInstructionHandler() called\n");
+} /* illegalInstructionHandler */
+
+void initProcTable(){
+    int i;
+    for (i = 0; i < MAXPROC; i++){
+        initProc(i);
+    }
+}
+
+void initProc(int loc){
+    ProcTable[loc].nextProcPtr = NULL;
+    ProcTable[loc].parentProcPtr = NULL;
+    ProcTable[loc].childProcPtr = NULL;
+    ProcTable[loc].nextSiblingPtr = NULL;
+    ProcTable[loc].quitChildPtr = NULL;
+    ProcTable[loc].pid = 0;
+    ProcTable[loc].stack = NULL;
+    ProcTable[loc].status = EMPTYSTATUS;
+}
+
+void readyUp(procPtr proc, int loc){
+    if (ReadyList[loc] == NULL){
+        ReadyList[loc] = proc;
+        proc->status = READYSTATUS;
+    }else{
+        procPtr temp = ReadyList[loc];
+        while (temp->nextProcPtr != NULL){
+            temp = temp->nextProcPtr;
+        }
+        temp->nextProcPtr = proc;
+        proc->status = READYSTATUS;
+    }
+}
