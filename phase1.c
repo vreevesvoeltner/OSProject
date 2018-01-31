@@ -27,8 +27,10 @@ void enableInterrupts();
 void initProcTable();
 void initProc(int);
 void readyUp(procPtr, int);
-
-
+int zap(int pid);
+int isZapped(void);
+int getpid(void);
+void dumpProcesses(void);
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
@@ -234,7 +236,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         dispatcher();
     }
 
-    return ProcTable[procSlot].pid;  // -1 is not correct! Here to prevent warning.
+    return ProcTable[procSlot].pid;  
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -487,7 +489,7 @@ void enableInterrupts()
 } /* enableInterrupts */
 
 /* ------------------------------------------------------------------------
-   Name - 
+   Name - clockHandler(int dev, void *arg)
    Purpose - 
    Parameters - 
    Returns - 
@@ -511,10 +513,10 @@ void illegalInstructionHandler(int dev, void *arg)
 } /* illegalInstructionHandler */
 
 /* ------------------------------------------------------------------------
-   Name - 
-   Purpose - 
-   Parameters - 
-   Returns - 
+   Name - initProcTable()
+   Purpose - Initializing the values of all items in the process table 
+   Parameters - None 
+   Returns - None 
    Side Effects -  
    ----------------------------------------------------------------------- */
 void initProcTable(){
@@ -525,8 +527,8 @@ void initProcTable(){
 }
 
 /* ------------------------------------------------------------------------
-   Name - 
-   Purpose - 
+   Name - initProc(int loc) 
+   Purpose - Initializing all the values of a item in the process table
    Parameters - 
    Returns - 
    Side Effects -  
@@ -544,7 +546,7 @@ void initProc(int loc){
 }
 
 /* ------------------------------------------------------------------------
-   Name - 
+   Name - readyUp(procPtr proc, int loc) 
    Purpose - 
    Parameters - 
    Returns - 
@@ -562,4 +564,136 @@ void readyUp(procPtr proc, int loc){
         temp->nextProcPtr = proc;
         proc->status = READYSTATUS;
     }
+} 
+
+
+/* ------------------------------------------------------------------------
+Name - int zap(int pid)
+Purpose - This operation marks a process pid as being zapped.
+	Subsequent calls to isZapped by that process will return 1.
+	zap does not return until the zapped process has called quit.
+Parameters - int pid
+Returns -	-1: the calling process itself was zapped while in zap.
+			0: the zapped process has called quit.
+Side Effects -
+----------------------------------------------------------------------- */
+int zap(int pid) {
+	if (DEBUG && debugflag) {
+		USLOSS_Console("-> In zap()\n");
+	}
+
+	// test if in kernel mode; halt if in user mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("-> zap(): in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+
+	// The kernel should print an error message 
+	// and call USLOSS_Halt(1) if a process tries to
+	// zap itself or attempts to zap a nonexistent process.
+	if (Current->pid = pid) {
+		USLOSS_Console(" -> zap(PID: %d) zaps itself.\n");
+		USLOSS_Halt(1);
+	}
+
+	// STOPHERE TP
 }
+
+/* ------------------------------------------------------------------------
+Name - int isZapped(void)
+Purpose -
+Parameters - None 
+Returns -	0: the calling process has not been zapped.
+			1: the calling process has been zapped.
+Side Effects -
+----------------------------------------------------------------------- */
+int isZapped(void) {
+
+}
+
+/* ------------------------------------------------------------------------
+Name - int getpid(void)
+Purpose - Returns the PID of the calling process
+Parameters -
+Returns - Returns the PID of the calling process
+Side Effects -
+----------------------------------------------------------------------- */
+int getpid(void) {
+	if (DEBUG && debugflag) {
+		USLOSS_Console("-> In getpid(void)\n");
+	}
+
+	// test if in kernel mode; halt if in user mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("-> getpid(void): in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	return Current->pid;
+}
+
+/* ------------------------------------------------------------------------
+Name - void dumpProcesses(void)
+Purpose - This routine prints process information to the console
+Parameters - None 
+Returns - For each PCB in the process table, print  its: 
+	PID, parent’s PID, priority, process status , 
+	number of children, CPU time consumed, and name.
+Side Effects -
+----------------------------------------------------------------------- */
+void dumpProcesses(void) {
+	if (DEBUG && debugflag) {
+		USLOSS_Console("-> In dumpProcesses(void)\n");
+	}
+
+	// test if in kernel mode; halt if in user mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("-> dumpProcesses(void): in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	//FIXME: add CPUtime and number of children 
+
+	// Output tiles to console
+	USLOSS_Console("PID\tParent’s PID\tpriority\tprocess status\tnumber of children\tCPU time consumed\tName\n");
+
+	// Loop through all items in the tables 
+	int i, parentPid;
+	int cpuTime = -99;  // -99 is not a correct value
+	int numChildren = -99;  // -99 is not a correct value
+	char *status;
+	for (i = 0; i < MAXPROC; i++) {
+		// if there is no parent, set parentPid = -1
+		if (ProcTable[i].parentPtr == NULL) {
+			parentPid = -1;
+		}
+		else {
+			parentPid = ProcTable[i].parentPtr->pid;
+		}
+
+		// convert status number to string 
+		if (ProcTable[i].status == 0) {
+			status = "EMPTY";
+		} else if (ProcTable[i].status == 1) {
+			status = "READY";
+		}
+		else if (ProcTable[i].status == 2) {
+			status = "RUN";
+		}
+		else if (ProcTable[i].status == 3) {
+			status = "QUIT";
+		}
+		else {
+			status = "FIXME";
+		}
+
+		// output Items in the table 
+		USLOSS_Console("%d\t%d\t\t%d\t%s\t%\t%d\t%s\n",
+			ProcTable[i].pid, ProcTable[i].parentProcPtr, 
+			ProcTable[i].priority,status,numChildren,cpuTime,
+			ProcTable[i].name);
+	}
+}
+
+

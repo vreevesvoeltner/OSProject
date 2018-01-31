@@ -44,6 +44,7 @@ union psrValues {
 #define SENTINELPID 1
 #define SENTINELPRIORITY (MINPRIORITY + 1)
 
+/* process statuses */
 #define EMPTYSTATUS 0
 #define READYSTATUS 1
 #define RUNSTATUS 2
