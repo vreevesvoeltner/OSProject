@@ -316,7 +316,7 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
-printf("In quit\n");
+	USLOSS_Console("In quit\n");
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
         USLOSS_Console("fork1(): in user mode. Halting...\n");
         USLOSS_Halt(1);
@@ -432,10 +432,15 @@ int sentinel (char *dummy)
 
 
 /* ------------------------------------------------------------------------
-   Name - 
-   Purpose - 
-   Parameters - 
-   Returns - 
+   Name - checkDeadlock()
+   Purpose - For Phase 1, there are no i/o devices (they will appear in Phase 2)
+   . Thus, the checkDeadlock function determines if all processes have quit;
+   this is normal termination of USLOSS and ends with USLOSS_Halt(0). 
+   If checkDeadlock determines that there are process(es) other than 
+   the sentinel process this is abnormal termination of USLOSS 
+   and ends with USLOSS_Halt(1).
+   Parameters - None 
+   Returns - None 
    Side Effects -  
    ----------------------------------------------------------------------- */
 static void checkDeadlock()
@@ -444,17 +449,15 @@ static void checkDeadlock()
 
 
 /* ------------------------------------------------------------------------
-   Name - 
-   Purpose - 
-   Parameters - 
-   Returns - 
+   Name - enableInterrupts()
+   Purpose - Turn the interrupts ON iff we are in kernel mode
+   if not in kernel mode, print an error message and halt USLOSS
+   Parameters - None 
+   Returns - None 
    Side Effects -  
    ----------------------------------------------------------------------- */
 void disableInterrupts()
 {
-    // turn the interrupts OFF iff we are in kernel mode
-    // if not in kernel mode, print an error message and
-    // halt USLOSS
     if ((0x1 & USLOSS_PsrGet()) == 0){
         USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
         USLOSS_Halt(1);
@@ -465,17 +468,15 @@ void disableInterrupts()
 } /* disableInterrupts */
 
 /* ------------------------------------------------------------------------
-   Name - 
-   Purpose - 
-   Parameters - 
-   Returns - 
+   Name - enableInterrupts()
+   Purpose - Turn the interrupts ON iff we are in kernel mode
+   if not in kernel mode, print an error message and halt USLOSS
+   Parameters - None 
+   Returns - None 
    Side Effects -  
    ----------------------------------------------------------------------- */
 void enableInterrupts()
 {
-    // turn the interrupts IN iff we are in kernel mode
-    // if not in kernel mode, print an error message and
-    // halt USLOSS
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
         USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
         USLOSS_Halt(1);
