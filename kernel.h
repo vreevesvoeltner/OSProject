@@ -1,5 +1,5 @@
 /* Patrick's DEBUG printing constant... */
-#define DEBUG 0
+#define DEBUG 1
 
 typedef struct procStruct procStruct;
 
@@ -49,3 +49,4 @@ union psrValues {
 #define READYSTATUS 1
 #define RUNSTATUS 2
 #define QUITSTATUS 3
+#define JOINBLOCKSTATUS 4
