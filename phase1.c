@@ -21,6 +21,7 @@ int sentinel (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
+void clckHandler(int, void*);
 void disableInterrupts();
 void enableInterrupts();
 void initProcTable();
@@ -279,7 +280,28 @@ void launch()
    ------------------------------------------------------------------------ */
 int join(int *status)
 {
-    return -1;  // -1 is not correct! Here to prevent warning.
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("join(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+        
+    if (Current->childProcPtr == NULL){
+        USLOSS_Console("join(): No children to join.");
+        return -2;
+    }
+    
+    int kpid = -1;
+    if (Current->quitChildPtr == NULL){
+        Current->status = JOINBLOCKSTATUS;
+        dispatcher();
+    }else{
+        procPtr kid = Current->quitChildPtr;
+        kpid = kid->pid;
+        Current->quitChildPtr = kid->nextProcPtr;
+        *status = kid->quitStatus;
+        initProc(kpid % MAXPROC);
+    }
+    return kpid;  // -1 is not correct! Here to prevent warning.
 } /* join */
 
 
@@ -294,10 +316,16 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
+printf("In quit\n");
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
+        USLOSS_Console("fork1(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
     procPtr parent = Current->parentProcPtr,
             temp;
 
-    Current->status = QUITSTATUS;	
+    Current->status = QUITSTATUS;
+    Current->quitStatus = status;
 
     if (parent->quitChildPtr == NULL){
         parent->quitChildPtr = Current;
@@ -403,15 +431,25 @@ int sentinel (char *dummy)
 } /* sentinel */
 
 
-/* check to determine if deadlock has occurred... */
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 static void checkDeadlock()
 {
 } /* checkDeadlock */
 
 
-/*
- * Disables the interrupts.
- */
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void disableInterrupts()
 {
     // turn the interrupts OFF iff we are in kernel mode
@@ -426,9 +464,13 @@ void disableInterrupts()
 
 } /* disableInterrupts */
 
-/*
- * Enable the interrupts.
- */
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void enableInterrupts()
 {
     // turn the interrupts IN iff we are in kernel mode
@@ -443,13 +485,37 @@ void enableInterrupts()
 
 } /* enableInterrupts */
 
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
+void clockHandler(int dev, void *arg){
 
+}
+
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void illegalInstructionHandler(int dev, void *arg)
 {
     if (DEBUG && debugflag)
         USLOSS_Console("illegalInstructionHandler() called\n");
 } /* illegalInstructionHandler */
 
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void initProcTable(){
     int i;
     for (i = 0; i < MAXPROC; i++){
@@ -457,6 +523,13 @@ void initProcTable(){
     }
 }
 
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void initProc(int loc){
     ProcTable[loc].nextProcPtr = NULL;
     ProcTable[loc].parentProcPtr = NULL;
@@ -466,8 +539,16 @@ void initProc(int loc){
     ProcTable[loc].pid = 0;
     ProcTable[loc].stack = NULL;
     ProcTable[loc].status = EMPTYSTATUS;
+    ProcTable[loc].quitStatus = 0;
 }
 
+/* ------------------------------------------------------------------------
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
 void readyUp(procPtr proc, int loc){
     if (ReadyList[loc] == NULL){
         ReadyList[loc] = proc;

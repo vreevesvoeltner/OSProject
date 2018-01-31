@@ -20,6 +20,7 @@ struct procStruct {
    char           *stack;
    unsigned int    stackSize;
    int             status;        /* READY, BLOCKED, QUIT, etc. */
+   int             quitStatus;
    /* other fields as needed... */
 };
 
