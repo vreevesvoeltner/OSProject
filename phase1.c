@@ -21,6 +21,7 @@ int sentinel (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
+void illegalInstructionHandler(int dev, void *arg);
 void clckHandler(int, void*);
 void disableInterrupts();
 void enableInterrupts();
@@ -49,6 +50,8 @@ unsigned int nextPid = SENTINELPID;
 // number of processes
 int numProcs = 0;
 
+int time = 0;
+
 
 /* -------------------------- Functions ----------------------------------- */
 /* ------------------------------------------------------------------------
@@ -63,6 +66,9 @@ void startup(int argc, char *argv[])
 {
     int result, /* value returned by call to fork1() */
         i;
+
+    //Initialize the illegalInstruction interrupt handler
+    USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalInstructionHandler;
 
     /* initialize the process table */
     if (DEBUG && debugflag)
@@ -284,23 +290,28 @@ int join(int *status)
         USLOSS_Console("join(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
-        
+    
+    USLOSS_Console("join(): %s attemping to join.\n", Current->name);
+ 
     if (Current->childProcPtr == NULL){
-        USLOSS_Console("join(): No children to join.");
+        USLOSS_Console("join(): No children to join.\n");
         return -2;
     }
     
     int kpid = -1;
     if (Current->quitChildPtr == NULL){
+        USLOSS_Console("join(): No children have quit.\n");
+	ReadyList[Current->priority - 1] = Current->nextProcPtr;
         Current->status = JOINBLOCKSTATUS;
         dispatcher();
-    }else{
-        procPtr kid = Current->quitChildPtr;
-        kpid = kid->pid;
-        Current->quitChildPtr = kid->nextProcPtr;
-        *status = kid->quitStatus;
-        initProc(kpid % MAXPROC);
     }
+    USLOSS_Console("join(): A child has quit.");
+    procPtr kid = Current->quitChildPtr;
+    kpid = kid->pid;
+    Current->quitChildPtr = kid->nextProcPtr;
+    *status = kid->quitStatus;
+    initProc(kpid % MAXPROC);
+
     return kpid;  // -1 is not correct! Here to prevent warning.
 } /* join */
 
@@ -316,16 +327,18 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
-printf("In quit\n");
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
         USLOSS_Console("fork1(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
+
+    USLOSS_Console("quit(): %s is quitting.\n", Current->name);
     procPtr parent = Current->parentProcPtr,
             temp;
 
     Current->status = QUITSTATUS;
     Current->quitStatus = status;
+    ReadyList[Current->priority - 1] = Current->nextProcPtr;
 
     if (parent->quitChildPtr == NULL){
         parent->quitChildPtr = Current;
@@ -338,7 +351,7 @@ printf("In quit\n");
     }
 
     Current->nextProcPtr = NULL;
-    p1_quit(Current->pid);
+    //p1_quit(Current->pid);
 
     if (parent->childProcPtr == Current){
         parent->childProcPtr = Current->nextSiblingPtr;
@@ -382,14 +395,16 @@ void dispatcher(void)
     for (i = 0; i < 6; i++){
         if (ReadyList[i] != NULL){
             nextProcess = ReadyList[i];
-            ReadyList[i] = ReadyList[i]->nextProcPtr;
             break;
         }
     }
 
     //TODO: Check if next is same as Current
     if (Current->status == RUNSTATUS){
-        //TODO: check clock
+        if (time < 80 && nextProcess->priority <= Current->priority){
+	    return;
+	}
+	ReadyList[Current->priority - 1] = Current->nextProcPtr;
         readyUp(Current, Current->priority - 1);
     }
     p1_switch(Current->pid, nextProcess->pid);
@@ -398,11 +413,10 @@ void dispatcher(void)
     procPtr tempProc = Current;
     Current = nextProcess;
     if (Current->status == EMPTYSTATUS || Current->status == QUITSTATUS)
-        USLOSS_ContextSwitch(NULL, &Current->state	);
+        USLOSS_ContextSwitch(NULL, &Current->state);
     else
         USLOSS_ContextSwitch(&tempProc->state, &Current->state);
-        
-    Current = nextProcess;
+    
     Current->status = RUNSTATUS;
     
 } /* dispatcher */
