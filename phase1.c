@@ -21,6 +21,8 @@ int sentinel (char *);
 void dispatcher(void);
 void launch();
 static void checkDeadlock();
+void disableInterrupts();
+void enableInterrupts();
 void initProcTable();
 void initProc(int);
 void readyUp(procPtr, int);
@@ -137,6 +139,7 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
+    disableInterrupts();
     int procSlot = -1;
 
     if (DEBUG && debugflag)
@@ -165,7 +168,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         USLOSS_Console("fork1(): Start function is NULL.");
         return -1;
     }
-    if (priority < 1 || (priority > 5 && startFunc != sentinel)){
+    if (priority < 1 || (priority > 5 && startFunc != sentinel) || priority > 6){
         USLOSS_Console("fork1(): Priority out of range.");
         return -1;
     }
@@ -228,10 +231,9 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
     
     if (ProcTable[procSlot].pid != 1){
         dispatcher();
-printf("%s\n", ProcTable[procSlot].name);
     }
 
-    return procSlot;  // -1 is not correct! Here to prevent warning.
+    return ProcTable[procSlot].pid;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -250,6 +252,7 @@ void launch()
         USLOSS_Console("launch(): started\n");
 
     // Enable interrupts
+    enableInterrupts();
 
     // Call the function passed to fork1, and capture its return value
     result = Current->startFunc(Current->startArg);
@@ -291,7 +294,38 @@ int join(int *status)
    ------------------------------------------------------------------------ */
 void quit(int status)
 {
+    procPtr parent = Current->parentProcPtr,
+            temp;
+
+    Current->status = QUITSTATUS;	
+
+    if (parent->quitChildPtr == NULL){
+        parent->quitChildPtr = Current;
+    }else{
+        temp = parent->quitChildPtr;
+        while (temp->nextProcPtr != NULL){
+            temp = temp->nextProcPtr;
+        }
+        temp->nextProcPtr = Current;
+    }
+
+    Current->nextProcPtr = NULL;
     p1_quit(Current->pid);
+
+    if (parent->childProcPtr == Current){
+        parent->childProcPtr = Current->nextSiblingPtr;
+    }else{
+        temp = parent->childProcPtr;
+        while (temp->nextSiblingPtr != Current){
+            temp = temp->nextSiblingPtr;
+        }
+        temp->nextSiblingPtr = Current->nextSiblingPtr;
+    }
+
+    if (parent->status == JOINBLOCKSTATUS){
+        readyUp(parent, parent->priority - 1);
+    }
+    dispatcher();
 } /* quit */
 
 
@@ -307,13 +341,16 @@ void quit(int status)
    ----------------------------------------------------------------------- */
 void dispatcher(void)
 {
+    // Check if in kernel mode
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
         USLOSS_Console("dispatcher(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
+
     procPtr nextProcess = NULL;
     int i;
     
+    // Find next process to run
     for (i = 0; i < 6; i++){
         if (ReadyList[i] != NULL){
             nextProcess = ReadyList[i];
@@ -322,17 +359,20 @@ void dispatcher(void)
         }
     }
 
-printf("Next Process:%s\n", nextProcess->name);
-    
+    //TODO: Check if next is same as Current
     if (Current->status == RUNSTATUS){
+        //TODO: check clock
         readyUp(Current, Current->priority - 1);
     }
-    //p1_switch(Current->pid, nextProcess->pid);
-    //enable interrupts
+    p1_switch(Current->pid, nextProcess->pid);
+    enableInterrupts();	
+
+    procPtr tempProc = Current;
+    Current = nextProcess;
     if (Current->status == EMPTYSTATUS || Current->status == QUITSTATUS)
-        USLOSS_ContextSwitch(NULL, &nextProcess->state);
+        USLOSS_ContextSwitch(NULL, &Current->state	);
     else
-        USLOSS_ContextSwitch(&Current->state, &nextProcess->state);
+        USLOSS_ContextSwitch(&tempProc->state, &Current->state);
         
     Current = nextProcess;
     Current->status = RUNSTATUS;
@@ -391,7 +431,7 @@ void disableInterrupts()
  */
 void enableInterrupts()
 {
-    // turn the interrupts OFF iff we are in kernel mode
+    // turn the interrupts IN iff we are in kernel mode
     // if not in kernel mode, print an error message and
     // halt USLOSS
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
