@@ -89,7 +89,7 @@ void startup(int argc, char *argv[])
     // Initialize the illegalInstruction interrupt handler
     USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalInstructionHandler;
 
-    // Initialize the clock interrupt handler
+    // FIXME: Initialize the clock interrupt handler
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -611,7 +611,8 @@ int zap(int pid) {
 		USLOSS_Halt(1);
 	}
 
-	// STOPHERE TP
+
+	return -99; //FIXME: return right values 
 }
 
 /* ------------------------------------------------------------------------
@@ -623,7 +624,7 @@ Returns -	0: the calling process has not been zapped.
 Side Effects -
 ----------------------------------------------------------------------- */
 int isZapped(void) {
-
+	return -99; // FIXME: return the right values
 }
 
 /* ------------------------------------------------------------------------

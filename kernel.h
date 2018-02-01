@@ -21,7 +21,13 @@ struct procStruct {
    unsigned int    stackSize;
    int             status;        /* READY, BLOCKED, QUIT, etc. */
    int             quitStatus;
-   /* other fields as needed... */
+   
+   /*TP fields added */
+   Queue		   deadChildrenQueue; // Queue of the quitted children 	
+   Queue		   zapQueue; // Queue of zapped processes 
+   procPtr		   nextZapPtr; // From current process we can access next zap
+   int			   zapStatus; // 1 if the process is zapped. 0 if it is not.
+
 };
 
 struct psrBits {
@@ -37,6 +43,25 @@ union psrValues {
    unsigned int integerPart;
 };
 
+/*TP*/
+/* 
+Struct for ZAP and QUITTEDCHILDREN queue.   
+The define values are use in "union methods" which are 
+used to identify which queue is working on 
+*/
+typedef struct Queue Queue;
+#define QUITTEDCHILDREN 0
+#define ZAP 1
+
+/*TP*/
+struct Queue {
+	procPtr head;
+	procPtr tail;
+	int 	type; // ZAP or QUITTEDCHILDREN 
+	int 	size; // size of the 
+};
+
+
 /* Some useful constants.  Add more as needed... */
 #define NO_CURRENT_PROCESS NULL
 #define MINPRIORITY 5
@@ -50,3 +75,4 @@ union psrValues {
 #define RUNSTATUS 2
 #define QUITSTATUS 3
 #define JOINBLOCKSTATUS 4
+
