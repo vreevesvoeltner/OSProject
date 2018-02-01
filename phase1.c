@@ -32,6 +32,11 @@ int zap(int pid);
 int isZapped(void);
 int getpid(void);
 void dumpProcesses(void);
+void initQueue(Queue* queue, int type);
+int isEmptyQueue(Queue* queue);
+procPtr peek(procQueue* queue);
+void enqueue(Queue* queue, procPtr newProc);
+procPtr dequeue(Queue* queue); 
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
@@ -771,6 +776,17 @@ int isEmptyQueue(Queue* queue)
 }
 
 /* ------------------------------------------------------------------------
+Purpose - return a head of the Queue (procPtr)
+Returns - Head of the Queue (procPtr)
+----------------------------------------------------------------------- */
+procPtr peek(procQueue* queue) {
+	if (queue->head == NULL) {
+		return NULL;
+	}
+	return queue->head;
+}
+
+/* ------------------------------------------------------------------------
 Purpose - Add new item to the queue 
 Returns - None
 ----------------------------------------------------------------------- */
@@ -818,15 +834,6 @@ procPtr dequeue(Queue* queue) {
 	return head;
 }
 
-/* ------------------------------------------------------------------------
-Purpose - return a head of the Queue (procPtr)
-Returns - Head of the Queue (procPtr)
------------------------------------------------------------------------ */
-procPtr peek(procQueue* queue) {
-	if (queue->head == NULL) {
-		return NULL;
-	}
-	return queue->head;
-}
+
 
 
