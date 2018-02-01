@@ -89,7 +89,7 @@ void startup(int argc, char *argv[])
     // Initialize the illegalInstruction interrupt handler
     USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalInstructionHandler;
 
-    // FIXME: Initialize the clock interrupt handler
+    //Initialize the clock interrupt handler
 
     // startup a sentinel process
     if (DEBUG && debugflag)
@@ -557,6 +557,13 @@ void initProc(int loc){
     ProcTable[loc].stack = NULL;
     ProcTable[loc].status = EMPTYSTATUS;
     ProcTable[loc].quitStatus = 0;
+
+	/*TP*/
+	initQueue(&ProcTable[loc].zapQueue, ZAP);
+	initQueue(&ProcTable[loc].quittedChildrenQueue, QUITTEDCHILDREN);
+	ProcTable[loc].nextZapPtr = NULL;
+	ProcTable[loc].nextQuittedSibPtr = NULL;
+	ProcTable[loc].zapped = 0; // the process is not zapped
 }
 
 /* ------------------------------------------------------------------------
@@ -596,23 +603,42 @@ int zap(int pid) {
 		USLOSS_Console("-> In zap()\n");
 	}
 
+	procPtr aProcPtr = &ProcTable[pid % MAXPROC];
+
 	// test if in kernel mode; halt if in user mode
 	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
 		USLOSS_Console("-> zap(): in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
-
+	disableInterrupts();
 
 	// The kernel should print an error message 
 	// and call USLOSS_Halt(1) if a process tries to
 	// zap itself or attempts to zap a nonexistent process.
-	if (Current->pid = pid) {
-		USLOSS_Console(" -> zap(PID: %d) zaps itself.\n");
+	if (Current->pid = pid || aProcPtr->status == EMPTYSTATUS 
+		|| aProcPtr->pid != pid) {
+		USLOSS_Console(" -> zap(PID: %d) zaps itself OR nonexistent process.\n");
 		USLOSS_Halt(1);
 	}
 
 
-	return -99; //FIXME: return right values 
+	if (aProcPtr->status == QUITSTATUS) { 
+		enableInterrupts();
+		if (Current->zapQueue.size > 0) {
+			return -1;
+		}
+		return 0;
+	}
+
+	enqueue(&aProcPtr-->zapQueue, Current); // add current process to Zap Queue 
+	//FIXME: block()?
+
+
+	enableInterrupts();
+	if (Current->zapQueue.size > 0) {
+		return -1;
+	}
+	return 0; 
 }
 
 /* ------------------------------------------------------------------------
@@ -624,7 +650,13 @@ Returns -	0: the calling process has not been zapped.
 Side Effects -
 ----------------------------------------------------------------------- */
 int isZapped(void) {
-	return -99; // FIXME: return the right values
+	// test if in kernel mode; halt if in user mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("-> zap(): in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	return (Current->zapQueue.size > 0)
 }
 
 /* ------------------------------------------------------------------------
@@ -709,6 +741,92 @@ void dumpProcesses(void) {
 			ProcTable[i].priority,status,numChildren,cpuTime,
 			ProcTable[i].name);
 	}
+}
+
+/*================================== TP ==================================*/
+
+/* ------------------------------------------------------------------------
+Purpose - initialize values of struct 
+Returns - None
+----------------------------------------------------------------------- */
+/* Initialize the given procQueue */
+void initQueue(Queue* queue, int type) {
+	queue->head = NULL;
+	queue->tail = NULL;
+	queue->type = type;
+	queue->size = 0;
+}
+
+/* ------------------------------------------------------------------------
+Purpose - check for empty queue 
+Returns - 1 if queue is empty, 0 if it is not  
+----------------------------------------------------------------------- */
+int isEmptyQueue(Queue* queue)
+{
+	if (queue->size == 0) {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+/* ------------------------------------------------------------------------
+Purpose - Add new item to the queue 
+Returns - None
+----------------------------------------------------------------------- */
+void enqueue(Queue* queue, procPtr newProc) {
+	if (queue->head == NULL && queue->tail == NULL) {
+		queue->head = queue->tail = newProc;
+	}
+	else {
+		if (queue->type == ZAP) {
+			queue->tail->nextZapPtr = newProc;
+		}
+		else if (queue->type == QUITTEDCHILDREN) {
+			queue->tail->nextQuittedSibPtr = newProc;
+		}
+		else {
+			USLOSS_Console("-------> FIXME: Error Queue type int enqueue: %d\n", queue->type);
+		}
+	}		
+	queue->size++;
+}
+
+/* ------------------------------------------------------------------------
+Purpose - Remove head of the queue
+Returns - Head of the Queue (procPtr)
+----------------------------------------------------------------------- */
+procPtr dequeue(Queue* queue) {
+	procPtr head = queue->head;
+	if (queue->size == 0) {
+		return NULL;
+	}
+
+	if (queue->head == queue->tail) {
+		queue->head = queue->tail = NULL;
+	}
+	else {
+		if (queue->type == ZAP)
+			queue->head = queue->head->nextZapPtr;
+		else if (queue->type == QUITTEDCHILDREN)
+			queue->head = queue->head->nextQuittedSibPtr;
+		else {
+			USLOSS_Console("-------> FIXME: Error Queue type in dequeue: %d\n", queue->type);
+		}
+	}
+	queue->size--;
+	return head;
+}
+
+/* ------------------------------------------------------------------------
+Purpose - return a head of the Queue (procPtr)
+Returns - Head of the Queue (procPtr)
+----------------------------------------------------------------------- */
+procPtr peek(procQueue* queue) {
+	if (queue->head == NULL) {
+		return NULL;
+	}
+	return queue->head;
 }
 
 

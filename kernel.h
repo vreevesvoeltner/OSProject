@@ -23,10 +23,11 @@ struct procStruct {
    int             quitStatus;
    
    /*TP fields added */
-   Queue		   deadChildrenQueue; // Queue of the quitted children 	
+   Queue		   quittedChildrenQueue; // Queue of the quitted children 	
    Queue		   zapQueue; // Queue of zapped processes 
    procPtr		   nextZapPtr; // From current process we can access next zap
-   int			   zapStatus; // 1 if the process is zapped. 0 if it is not.
+   procPtr 		   nextQuittedSibPtr; // From current process we can access next quitted children 
+   int			   zapped; // 1 if the process is zapped. 0 if it is not.
 
 };
 
