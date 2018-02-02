@@ -22,20 +22,19 @@ void dispatcher(void);
 void launch();
 static void checkDeadlock();
 void illegalInstructionHandler(int dev, void *arg);
-void clckHandler(int, void*);
+void clockHandler(int, void*);
 void disableInterrupts();
 void enableInterrupts();
+int getpid();
 void initProcTable();
 void initProc(int);
 void readyUp(procPtr, int);
-int zap(int pid);
-int isZapped(void);
-int getpid(void);
-void dumpProcesses(void);
+
+
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
-int debugflag = 1;
+int debugflag = 0;
 
 // the process table
 procStruct ProcTable[MAXPROC];
@@ -52,7 +51,7 @@ unsigned int nextPid = SENTINELPID;
 // number of processes
 int numProcs = 0;
 
-int time = 0;
+int currentTime;
 
 
 /* -------------------------- Functions ----------------------------------- */
@@ -88,9 +87,9 @@ void startup(int argc, char *argv[])
 
     // Initialize the illegalInstruction interrupt handler
     USLOSS_IntVec[USLOSS_ILLEGAL_INT] = illegalInstructionHandler;
-
-    //Initialize the clock interrupt handler
-
+    
+    // Initialize the clock interrupt handler
+    USLOSS_IntVec[USLOSS_CLOCK_DEV] = clockHandler;
     // startup a sentinel process
     if (DEBUG && debugflag)
         USLOSS_Console("startup(): calling fork1() for sentinel\n");
@@ -148,7 +147,7 @@ void finish(int argc, char *argv[])
 int fork1(char *name, int (*startFunc)(char *), char *arg,
           int stacksize, int priority)
 {
-    disableInterrupts();
+
     int procSlot = -1;
 
     if (DEBUG && debugflag)
@@ -156,9 +155,10 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
 
     // test if in kernel mode; halt if in user mode
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
-        USLOSS_Console("fork1(): in user mode. Halting...\n");
+        USLOSS_Console("fork1(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
+    disableInterrupts();
     // Return if stack size is too small
     if (stacksize < USLOSS_MIN_STACK){
         USLOSS_Console("fork1(): Stack size too small.");
@@ -242,7 +242,7 @@ int fork1(char *name, int (*startFunc)(char *), char *arg,
         dispatcher();
     }
 
-    return ProcTable[procSlot].pid;  
+    return ProcTable[procSlot].pid;  // -1 is not correct! Here to prevent warning.
 } /* fork1 */
 
 /* ------------------------------------------------------------------------
@@ -289,25 +289,28 @@ void launch()
 int join(int *status)
 {
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
-        USLOSS_Console("join(): in user mode. Halting...\n");
+        USLOSS_Console("join(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
-    
-    USLOSS_Console("join(): %s attemping to join.\n", Current->name);
+    if (DEBUG && debugflag)
+        USLOSS_Console("join(): %s attemping to join.\n", Current->name);
  
-    if (Current->childProcPtr == NULL){
-        USLOSS_Console("join(): No children to join.\n");
+    if (Current->childProcPtr == NULL && Current->quitChildPtr == NULL){
+        if (DEBUG && debugflag)
+            USLOSS_Console("join(): No children to join.\n");
         return -2;
     }
     
     int kpid = -1;
     if (Current->quitChildPtr == NULL){
-        USLOSS_Console("join(): No children have quit.\n");
-	ReadyList[Current->priority - 1] = Current->nextProcPtr;
+        if (DEBUG && debugflag)
+            USLOSS_Console("join(): No children have quit.\n");
+        ReadyList[Current->priority - 1] = Current->nextProcPtr;
         Current->status = JOINBLOCKSTATUS;
         dispatcher();
     }
-    USLOSS_Console("join(): A child has quit.");
+    if (DEBUG && debugflag)
+        USLOSS_Console("join(): A child has quit.");
     procPtr kid = Current->quitChildPtr;
     kpid = kid->pid;
     Current->quitChildPtr = kid->nextProcPtr;
@@ -330,44 +333,59 @@ int join(int *status)
 void quit(int status)
 {
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0){
-        USLOSS_Console("fork1(): in user mode. Halting...\n");
+        USLOSS_Console("quit(): called while in user mode, by process %d. Halting...\n", Current->pid);
         USLOSS_Halt(1);
     }
-
-    USLOSS_Console("quit(): %s is quitting.\n", Current->name);
+    if (DEBUG && debugflag)
+        USLOSS_Console("quit(): %s is quitting.\n", Current->name);
     procPtr parent = Current->parentProcPtr,
             temp;
+    if (Current->childProcPtr != NULL){
+        USLOSS_Console("quit(): process %d, '%s', has active children. Halting...\n", Current->pid, Current->name);
+        USLOSS_Halt(1);
+    }
 
     Current->status = QUITSTATUS;
     Current->quitStatus = status;
     ReadyList[Current->priority - 1] = Current->nextProcPtr;
-
-    if (parent->quitChildPtr == NULL){
-        parent->quitChildPtr = Current;
-    }else{
-        temp = parent->quitChildPtr;
-        while (temp->nextProcPtr != NULL){
-            temp = temp->nextProcPtr;
-        }
-        temp->nextProcPtr = Current;
-    }
-
     Current->nextProcPtr = NULL;
-    //p1_quit(Current->pid);
-
-    if (parent->childProcPtr == Current){
-        parent->childProcPtr = Current->nextSiblingPtr;
-    }else{
-        temp = parent->childProcPtr;
-        while (temp->nextSiblingPtr != Current){
-            temp = temp->nextSiblingPtr;
+    if (parent != NULL){
+        if (parent->quitChildPtr == NULL){
+            parent->quitChildPtr = Current;
+        }else{
+            temp = parent->quitChildPtr;
+            while (temp->nextProcPtr != NULL){
+                temp = temp->nextProcPtr;
+            }
+            temp->nextProcPtr = Current;
         }
-        temp->nextSiblingPtr = Current->nextSiblingPtr;
-    }
+        if (parent->childProcPtr == Current){
+            parent->childProcPtr = Current->nextSiblingPtr;
+        }else{
+            temp = parent->childProcPtr;
+            while (temp->nextSiblingPtr != Current){
+                temp = temp->nextSiblingPtr;
+            }
+            temp->nextSiblingPtr = Current->nextSiblingPtr;
+        }
+    
+        if (parent->status == JOINBLOCKSTATUS){
+            readyUp(parent, parent->priority - 1);
+        }
 
-    if (parent->status == JOINBLOCKSTATUS){
-        readyUp(parent, parent->priority - 1);
     }
+    while (Current->quitChildPtr != NULL){
+        temp = Current->quitChildPtr;
+        Current->quitChildPtr = temp->nextProcPtr;
+        initProc(temp->pid % MAXPROC);
+    }
+        while (Current->zappedByPtr != NULL){
+            readyUp(Current->zappedByPtr, Current->zappedByPtr->priority - 1);
+            Current->zappedByPtr->zapPtr = NULL;
+            Current->zappedByPtr = Current->zappedByPtr->nextZappedBy;
+        }
+    p1_quit(Current->pid);
+    numProcs--;
     dispatcher();
 } /* quit */
 
@@ -393,6 +411,7 @@ void dispatcher(void)
     procPtr nextProcess = NULL;
     int i;
     
+    
     // Find next process to run
     for (i = 0; i < 6; i++){
         if (ReadyList[i] != NULL){
@@ -402,15 +421,16 @@ void dispatcher(void)
     }
 
     //TODO: Check if next is same as Current
+    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
     if (Current->status == RUNSTATUS){
-        if (time < 80 && nextProcess->priority <= Current->priority){
-	    return;
-	}
-	ReadyList[Current->priority - 1] = Current->nextProcPtr;
+        if (currentTime - Current->startTime < 80000 && nextProcess->priority <= Current->priority){
+        return;
+    }
+    ReadyList[Current->priority - 1] = Current->nextProcPtr;
         readyUp(Current, Current->priority - 1);
     }
     p1_switch(Current->pid, nextProcess->pid);
-    enableInterrupts();	
+    enableInterrupts();    
 
     procPtr tempProc = Current;
     Current = nextProcess;
@@ -420,6 +440,7 @@ void dispatcher(void)
         USLOSS_ContextSwitch(&tempProc->state, &Current->state);
     
     Current->status = RUNSTATUS;
+    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &(Current->startTime));
     
 } /* dispatcher */
 
@@ -461,7 +482,37 @@ int sentinel (char *dummy)
    ----------------------------------------------------------------------- */
 static void checkDeadlock()
 {
+    if (numProcs <= 1){
+        USLOSS_Console("ALL processes completed.\n");
+        USLOSS_Halt(0);
+    }else{
+        USLOSS_Console("checkDeadLock(): numProc = %d. Only Sentinel should be left. Halting...\n", numProcs);
+        USLOSS_Halt(1);
+    }
+
 } /* checkDeadlock */
+
+/* ------------------------------------------------------------------------
+Name - int getpid(void)
+Purpose - Returns the PID of the calling process
+Parameters -
+Returns - Returns the PID of the calling process
+Side Effects -
+----------------------------------------------------------------------- */
+int getpid(void) {
+	if (DEBUG && debugflag) {
+		USLOSS_Console("-> In getpid(void)\n");
+	}
+
+	// test if in kernel mode; halt if in user mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("-> getpid(void): in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	return Current->pid;
+}
+
 
 
 /* ------------------------------------------------------------------------
@@ -498,19 +549,83 @@ void enableInterrupts()
         USLOSS_Halt(1);
     }
     
-    USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);	
+    USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);    
 
 } /* enableInterrupts */
+/* ------------------------------------------------------------------------
+Name - void dumpProcesses(void)
+Purpose - This routine prints process information to the console
+Parameters - None 
+Returns - For each PCB in the process table, print  its: 
+    PID, parentâ€™s PID, priority, process status , 
+    number of children, CPU time consumed, and name.
+Side Effects -
+----------------------------------------------------------------------- */
+void dumpProcesses(void) {
+    if (DEBUG && debugflag) {
+        USLOSS_Console("-> In dumpProcesses(void)\n");
+    }
+
+    // test if in kernel mode; halt if in user mode
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("-> dumpProcesses(void): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+
+    //FIXME: add CPUtime and number of children 
+
+    // Output tiles to console
+    USLOSS_Console("PID\tParentâ€™s PID\tpriority\tprocess status\tnumber of children\tCPU time consumed\tName\n");
+
+    // Loop through all items in the tables 
+    int i, parentPid;
+    int cpuTime = -99;  // -99 is not a correct value
+    int numChildren = -99;  // -99 is not a correct value
+    char *status;
+    for (i = 0; i < numProcs; i++) {
+        // if there is no parent, set parentPid = -1
+        if (ProcTable[i].parentProcPtr == NULL) {
+            parentPid = -1;
+        }
+        else {
+            parentPid = ProcTable[i].parentProcPtr->pid;
+        }
+
+        // convert status number to string 
+        if (ProcTable[i].status == 0) {
+            status = "EMPTY";
+        } else if (ProcTable[i].status == 1) {
+            status = "READY";
+        }
+        else if (ProcTable[i].status == 2) {
+            status = "RUN";
+        }
+        else if (ProcTable[i].status == 3) {
+            status = "QUIT";
+        }
+        else {
+            status = "FIXME";
+        }
+
+        // output Items in the table 
+        USLOSS_Console("%d\t%d\t\t%d\t%s\t%d\t%d\t%s\n",
+            ProcTable[i].pid, parentPid, 
+            ProcTable[i].priority,status,numChildren,cpuTime,
+            ProcTable[i].name);
+    }
+}
 
 /* ------------------------------------------------------------------------
-   Name - clockHandler(int dev, void *arg)
+   Name - 
    Purpose - 
    Parameters - 
    Returns - 
    Side Effects -  
    ----------------------------------------------------------------------- */
 void clockHandler(int dev, void *arg){
-
+    USLOSS_DeviceInput(dev, 0, &currentTime);
+    if (currentTime - Current->startTime > 80000)
+        dispatcher();
 }
 
 /* ------------------------------------------------------------------------
@@ -525,69 +640,6 @@ void illegalInstructionHandler(int dev, void *arg)
     if (DEBUG && debugflag)
         USLOSS_Console("illegalInstructionHandler() called\n");
 } /* illegalInstructionHandler */
-
-/* ------------------------------------------------------------------------
-   Name - initProcTable()
-   Purpose - Initializing the values of all items in the process table 
-   Parameters - None 
-   Returns - None 
-   Side Effects -  
-   ----------------------------------------------------------------------- */
-void initProcTable(){
-    int i;
-    for (i = 0; i < MAXPROC; i++){
-        initProc(i);
-    }
-}
-
-/* ------------------------------------------------------------------------
-   Name - initProc(int loc) 
-   Purpose - Initializing all the values of a item in the process table
-   Parameters - 
-   Returns - 
-   Side Effects -  
-   ----------------------------------------------------------------------- */
-void initProc(int loc){
-    ProcTable[loc].nextProcPtr = NULL;
-    ProcTable[loc].parentProcPtr = NULL;
-    ProcTable[loc].childProcPtr = NULL;
-    ProcTable[loc].nextSiblingPtr = NULL;
-    ProcTable[loc].quitChildPtr = NULL;
-    ProcTable[loc].pid = 0;
-    ProcTable[loc].stack = NULL;
-    ProcTable[loc].status = EMPTYSTATUS;
-    ProcTable[loc].quitStatus = 0;
-
-	/*TP*/
-	initQueue(&ProcTable[loc].zapQueue, ZAP);
-	initQueue(&ProcTable[loc].quittedChildrenQueue, QUITTEDCHILDREN);
-	ProcTable[loc].nextZapPtr = NULL;
-	ProcTable[loc].nextQuittedSibPtr = NULL;
-	ProcTable[loc].zapped = 0; // the process is not zapped
-}
-
-/* ------------------------------------------------------------------------
-   Name - readyUp(procPtr proc, int loc) 
-   Purpose - 
-   Parameters - 
-   Returns - 
-   Side Effects -  
-   ----------------------------------------------------------------------- */
-void readyUp(procPtr proc, int loc){
-    if (ReadyList[loc] == NULL){
-        ReadyList[loc] = proc;
-        proc->status = READYSTATUS;
-    }else{
-        procPtr temp = ReadyList[loc];
-        while (temp->nextProcPtr != NULL){
-            temp = temp->nextProcPtr;
-        }
-        temp->nextProcPtr = proc;
-        proc->status = READYSTATUS;
-    }
-} 
-
-
 /* ------------------------------------------------------------------------
 Name - int zap(int pid)
 Purpose - This operation marks a process pid as being zapped.
@@ -603,7 +655,8 @@ int zap(int pid) {
 		USLOSS_Console("-> In zap()\n");
 	}
 
-	procPtr aProcPtr = &ProcTable[pid % MAXPROC];
+	procPtr aProcPtr = &ProcTable[pid % MAXPROC],
+            temp;
 
 	// test if in kernel mode; halt if in user mode
 	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -615,29 +668,41 @@ int zap(int pid) {
 	// The kernel should print an error message 
 	// and call USLOSS_Halt(1) if a process tries to
 	// zap itself or attempts to zap a nonexistent process.
-	if (Current->pid = pid || aProcPtr->status == EMPTYSTATUS 
-		|| aProcPtr->pid != pid) {
-		USLOSS_Console(" -> zap(PID: %d) zaps itself OR nonexistent process.\n");
+	if (aProcPtr->status == EMPTYSTATUS || aProcPtr->pid != pid) {
+		USLOSS_Console("zap(): process being zapped does not exist. Halting...\n");
 		USLOSS_Halt(1);
 	}
+	if (Current->pid == pid){
+		USLOSS_Console("zap(): process %d tried to zap itself. Halting...\n", Current->pid);
+		USLOSS_Halt(1);
+	}
+
+        if (aProcPtr->status == ZAPBLOCK)
+            return -1;
 
 
 	if (aProcPtr->status == QUITSTATUS) { 
 		enableInterrupts();
-		if (Current->zapQueue.size > 0) {
+		if (Current->zapPtr != NULL) {
 			return -1;
 		}
 		return 0;
 	}
-
-	enqueue(&aProcPtr-->zapQueue, Current); // add current process to Zap Queue 
-	//FIXME: block()?
+    Current->zapPtr = aProcPtr;
+    if (aProcPtr->zappedByPtr == NULL){
+        aProcPtr->zappedByPtr = Current;
+    }else{
+        temp = aProcPtr->zappedByPtr;
+        while (temp->nextZappedBy != NULL){
+            temp = temp->nextZappedBy;
+        }
+        temp->nextZappedBy = Current;
+        Current->nextZappedBy = NULL;
+    }// add current process to Zap Queue 
+    blockMe(ZAPBLOCK);
 
 
 	enableInterrupts();
-	if (Current->zapQueue.size > 0) {
-		return -1;
-	}
 	return 0; 
 }
 
@@ -656,177 +721,87 @@ int isZapped(void) {
 		USLOSS_Halt(1);
 	}
 
-	return (Current->zapQueue.size > 0)
+	return Current->status == ZAPSTATUS; // Return true if process is zapped
+}
+
+int blockMe(int newStatus){
+    if (newStatus <= 10){
+	USLOSS_Console("blockMe(): Invalid newStatus. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    Current->status = newStatus;
+    ReadyList[Current->priority - 1] = Current->nextProcPtr;
+    if (isZapped())
+        return -1;
+    dispatcher();
+    return 0;
+}
+
+int unblockProc(int pid){
+    procPtr aProcPtr = &ProcTable[pid % MAXPROC];
+
+    if (aProcPtr->status <=10 || aProcPtr == Current || aProcPtr->pid != pid){
+	USLOSS_Console("unblockProc(): Process %d cannot be unblocked this way.\n", aProcPtr->pid);
+        return -2;
+    }
+
+    if (isZapped())
+	return -1;
+
+    readyUp(aProcPtr, pid % MAXPROC);
+    return 0;
 }
 
 /* ------------------------------------------------------------------------
-Name - int getpid(void)
-Purpose - Returns the PID of the calling process
-Parameters -
-Returns - Returns the PID of the calling process
-Side Effects -
------------------------------------------------------------------------ */
-int getpid(void) {
-	if (DEBUG && debugflag) {
-		USLOSS_Console("-> In getpid(void)\n");
-	}
-
-	// test if in kernel mode; halt if in user mode
-	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-		USLOSS_Console("-> getpid(void): in user mode. Halting...\n");
-		USLOSS_Halt(1);
-	}
-
-	return Current->pid;
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
+void initProcTable(){
+    int i;
+    for (i = 0; i < MAXPROC; i++){
+        initProc(i);
+    }
 }
 
 /* ------------------------------------------------------------------------
-Name - void dumpProcesses(void)
-Purpose - This routine prints process information to the console
-Parameters - None 
-Returns - For each PCB in the process table, print  its: 
-	PID, parent’s PID, priority, process status , 
-	number of children, CPU time consumed, and name.
-Side Effects -
------------------------------------------------------------------------ */
-void dumpProcesses(void) {
-	if (DEBUG && debugflag) {
-		USLOSS_Console("-> In dumpProcesses(void)\n");
-	}
-
-	// test if in kernel mode; halt if in user mode
-	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-		USLOSS_Console("-> dumpProcesses(void): in user mode. Halting...\n");
-		USLOSS_Halt(1);
-	}
-
-	//FIXME: add CPUtime and number of children 
-
-	// Output tiles to console
-	USLOSS_Console("PID\tParent’s PID\tpriority\tprocess status\tnumber of children\tCPU time consumed\tName\n");
-
-	// Loop through all items in the tables 
-	int i, parentPid;
-	int cpuTime = -99;  // -99 is not a correct value
-	int numChildren = -99;  // -99 is not a correct value
-	char *status;
-	for (i = 0; i < MAXPROC; i++) {
-		// if there is no parent, set parentPid = -1
-		if (ProcTable[i].parentPtr == NULL) {
-			parentPid = -1;
-		}
-		else {
-			parentPid = ProcTable[i].parentPtr->pid;
-		}
-
-		// convert status number to string 
-		if (ProcTable[i].status == 0) {
-			status = "EMPTY";
-		} else if (ProcTable[i].status == 1) {
-			status = "READY";
-		}
-		else if (ProcTable[i].status == 2) {
-			status = "RUN";
-		}
-		else if (ProcTable[i].status == 3) {
-			status = "QUIT";
-		}
-		else {
-			status = "FIXME";
-		}
-
-		// output Items in the table 
-		USLOSS_Console("%d\t%d\t\t%d\t%s\t%\t%d\t%s\n",
-			ProcTable[i].pid, ProcTable[i].parentProcPtr, 
-			ProcTable[i].priority,status,numChildren,cpuTime,
-			ProcTable[i].name);
-	}
-}
-
-/*================================== TP ==================================*/
-
-/* ------------------------------------------------------------------------
-Purpose - initialize values of struct 
-Returns - None
------------------------------------------------------------------------ */
-/* Initialize the given procQueue */
-void initQueue(Queue* queue, int type) {
-	queue->head = NULL;
-	queue->tail = NULL;
-	queue->type = type;
-	queue->size = 0;
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
+void initProc(int loc){
+    ProcTable[loc].nextProcPtr = NULL;
+    ProcTable[loc].parentProcPtr = NULL;
+    ProcTable[loc].childProcPtr = NULL;
+    ProcTable[loc].nextSiblingPtr = NULL;
+    ProcTable[loc].quitChildPtr = NULL;
+    ProcTable[loc].pid = 0;
+    ProcTable[loc].stack = NULL;
+    ProcTable[loc].status = EMPTYSTATUS;
+    ProcTable[loc].quitStatus = 0;
 }
 
 /* ------------------------------------------------------------------------
-Purpose - check for empty queue 
-Returns - 1 if queue is empty, 0 if it is not  
------------------------------------------------------------------------ */
-int isEmptyQueue(Queue* queue)
-{
-	if (queue->size == 0) {
-		return 1;
-	} else {
-		return 0;
-	}
+   Name - 
+   Purpose - 
+   Parameters - 
+   Returns - 
+   Side Effects -  
+   ----------------------------------------------------------------------- */
+void readyUp(procPtr proc, int loc){
+    if (ReadyList[loc] == NULL){
+        ReadyList[loc] = proc;
+        proc->status = READYSTATUS;
+    }else{
+        procPtr temp = ReadyList[loc];
+        while (temp->nextProcPtr != NULL){
+            temp = temp->nextProcPtr;
+        }
+        temp->nextProcPtr = proc;
+        proc->status = READYSTATUS;
+    }
 }
-
-/* ------------------------------------------------------------------------
-Purpose - Add new item to the queue 
-Returns - None
------------------------------------------------------------------------ */
-void enqueue(Queue* queue, procPtr newProc) {
-	if (queue->head == NULL && queue->tail == NULL) {
-		queue->head = queue->tail = newProc;
-	}
-	else {
-		if (queue->type == ZAP) {
-			queue->tail->nextZapPtr = newProc;
-		}
-		else if (queue->type == QUITTEDCHILDREN) {
-			queue->tail->nextQuittedSibPtr = newProc;
-		}
-		else {
-			USLOSS_Console("-------> FIXME: Error Queue type int enqueue: %d\n", queue->type);
-		}
-	}		
-	queue->size++;
-}
-
-/* ------------------------------------------------------------------------
-Purpose - Remove head of the queue
-Returns - Head of the Queue (procPtr)
------------------------------------------------------------------------ */
-procPtr dequeue(Queue* queue) {
-	procPtr head = queue->head;
-	if (queue->size == 0) {
-		return NULL;
-	}
-
-	if (queue->head == queue->tail) {
-		queue->head = queue->tail = NULL;
-	}
-	else {
-		if (queue->type == ZAP)
-			queue->head = queue->head->nextZapPtr;
-		else if (queue->type == QUITTEDCHILDREN)
-			queue->head = queue->head->nextQuittedSibPtr;
-		else {
-			USLOSS_Console("-------> FIXME: Error Queue type in dequeue: %d\n", queue->type);
-		}
-	}
-	queue->size--;
-	return head;
-}
-
-/* ------------------------------------------------------------------------
-Purpose - return a head of the Queue (procPtr)
-Returns - Head of the Queue (procPtr)
------------------------------------------------------------------------ */
-procPtr peek(procQueue* queue) {
-	if (queue->head == NULL) {
-		return NULL;
-	}
-	return queue->head;
-}
-
-
