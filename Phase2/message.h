@@ -7,12 +7,17 @@ typedef struct mboxProc *mboxProcPtr;
 
 struct mailbox {
     int       mboxID;
+    int       numMessages; //Number of messages (slots in use) in this mailbox
+    int       totalSlots; //Max number of slots in this box
+    int       slotSize; //Max size of the slots
+    slotPtr   slots; //pointer to the first slot in this mailbox
     // other items as needed...
 };
 
 struct mailSlot {
     int       mboxID;
     int       status;
+    slotPtr   nextSlot; //Next mailbox slot in the same mailbox
     // other items as needed...
 };
 
@@ -28,3 +33,6 @@ union psrValues {
     struct psrBits bits;
     unsigned int integerPart;
 };
+
+#define SLOTEMPTY 0
+#define SLOTFULL 1

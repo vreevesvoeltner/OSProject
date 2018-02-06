@@ -26,6 +26,18 @@ int debugflag2 = 0;
 // the mail boxes 
 mailbox MailBoxTable[MAXMBOX];
 
+int nextMboxID;
+
+int numMailBoxes = 0;
+
+mailSlot MailSlotTable[MAXSLOTS];
+
+slotPtr nextOpenSlot;
+
+int filledSlots = 0;
+
+procStruc ProcTable[MAXPROC];
+
 // also need array of mail slots, array of function ptrs to system call 
 // handlers, ...
 
@@ -46,14 +58,23 @@ int start1(char *arg)
 {
     int kidPid;
     int status;
+    int i;
 
     if (DEBUG2 && debugflag2)
         USLOSS_Console("start1(): at beginning\n");
 
     // Initialize the mail box table, slots, & other data structures.
-
+    for (i = 0; i < MAXMBOX; i++){
+        initMailBox(MailBoxTable[i]);
+    }
+    nextMboxID = 0;
+    
+    for (i = 0; i < MAXSLOTS; i++){
+        initMailSlot(MailSlotTable[i]);
+    }
+    nextOpenSlot = &MailSlotTable[0];
     // Initialize USLOSS_IntVec and system call handlers,
-
+    
     // allocate mailboxes for interrupt handlers.  Etc... 
 
     // Create a process for start2, then block on a join until start2 quits
@@ -80,7 +101,29 @@ int start1(char *arg)
    ----------------------------------------------------------------------- */
 int MboxCreate(int slots, int slot_size)
 {
-    return 0;
+    // check if there are any open mailboxes
+    if (numMailBoxes == MAXMBOX){
+        USLOSS_Console("MboxCreate(): no open mailboxes.);
+        return -1;
+    }
+    // check if parameters are valid
+    if (slots > MAXSLOTS || slots < 0 || slot_size > MAX_MESSAGE || slot_size < 0){
+        USLOSS_Console("MboxCreate(): invalid parameters.");
+        return -1;
+    }
+    
+    mbox = MailBoxTable[nextMboxID % MAXMBOX];
+    nextMboxID++;
+    while (mbox.mboxID != -1){
+        mbox = MailBoxTable[nextMboxID % MAXMBOX];
+        nextMboxID++;
+    }
+    
+    mbox.mboxID = nextMboxID - 1;
+    mbox.totalSlots = slots;
+    mbox.slotSize = slot_size;
+    
+    return mbox.mboxID;
 } /* MboxCreate */
 
 
@@ -128,3 +171,17 @@ int check_io(void)
         USLOSS_Console("check_io(): called\n");
     return 0;
 } /* check_io */
+
+void initMailBox(mailbox m){
+    m.mboxID = -1;
+    m.numMessages = 0;
+    m.totalSlots = 0;
+    m.slotSize = 0;
+    m.slots = NULL;
+}
+
+void initMailSlot(mailSlot s){
+    s.mboxID = -1;
+    s.status = SLOTEMPTY;
+    s.nextSlot = NULL;
+}
