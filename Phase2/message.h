@@ -1,6 +1,7 @@
 
 #define DEBUG2 1
 
+typedef struct mailSlot mailSlot;
 typedef struct mailSlot *slotPtr;
 typedef struct mailbox   mailbox;
 typedef struct mboxProc *mboxProcPtr;

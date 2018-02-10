@@ -8,15 +8,17 @@
 
 #include <usloss.h>
 #include <usyscall.h>
-#include <phase1.h>
-#include <phase2.h>
+#include "phase1.h"
+#include "phase2.h"
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <message.h>
+#include "message.h"
 
 /* ------------------------- Prototypes ----------------------------------- */
 int start1 (char *);
+void initMailBox (mailbox);
+void initMailSlot (mailSlot);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -36,10 +38,9 @@ slotPtr nextOpenSlot;
 
 int filledSlots = 0;
 
-procStruc ProcTable[MAXPROC];
+//procStruc ProcTable[MAXPROC];
 
-// also need array of mail slots, array of function ptrs to system call 
-// handlers, ...
+// also array of function ptrs to system call handlers, ...
 
 
 
@@ -103,29 +104,31 @@ int MboxCreate(int slots, int slot_size)
 {
     // check if there are any open mailboxes
     if (numMailBoxes == MAXMBOX){
-        USLOSS_Console("MboxCreate(): no open mailboxes.);
+        USLOSS_Console("MboxCreate(): no open mailboxes.");
         return -1;
     }
     // check if parameters are valid
     if (slots > MAXSLOTS || slots < 0 || slot_size > MAX_MESSAGE || slot_size < 0){
-        USLOSS_Console("MboxCreate(): invalid parameters.");
+        USLOSS_Console("MboxCreate(): Invalid arguments given.\n");
         return -1;
     }
     
-    mbox = MailBoxTable[nextMboxID % MAXMBOX];
+    mailbox mbox = MailBoxTable[nextMboxID % MAXMBOX];
     nextMboxID++;
     while (mbox.mboxID != -1){
         mbox = MailBoxTable[nextMboxID % MAXMBOX];
         nextMboxID++;
+        printf("%d\n", mbox.mboxID);
     }
     
     mbox.mboxID = nextMboxID - 1;
     mbox.totalSlots = slots;
     mbox.slotSize = slot_size;
     
+    numMailBoxes++;
+    
     return mbox.mboxID;
 } /* MboxCreate */
-
 
 /* ------------------------------------------------------------------------
    Name - MboxSend
@@ -137,6 +140,50 @@ int MboxCreate(int slots, int slot_size)
    ----------------------------------------------------------------------- */
 int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 {
+    //Check if there are available slots
+    if (filledSlots == MAXSLOTS){
+        USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    //Check if process was zapped
+    if (isZapped()){
+        USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+        return -3;
+    }
+    //Check if mailbox has been released
+    if (MailBoxTable[mbox_id % MAXMBOX].mboxID == -1){
+        USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
+        return -3;
+    }
+    
+    mailbox target = MailBoxTable[mbox_id % MAXMBOX];
+    slotPtr temp;
+    
+    //TODO: Check for open slots in mailbox
+    //Check if arguments are valid
+    if (mbox_id < 0 || msg_size < 0 || msg_size > target.slotSize){
+        USLOSS_Console("MboxSend(): Invalid argument given.\n");
+        return -1;
+    }
+    
+    nextOpenSlot->mboxID = mbox_id;
+    nextOpenSlot->status = SLOTFULL;
+    
+    //Add message to mailbox
+    if (target.slots == NULL){
+        target.slots = nextOpenSlot;
+        nextOpenSlot->nextSlot = NULL;
+    }else{
+        temp = target.slots;
+        while (temp->nextSlot != NULL){
+            temp = temp->nextSlot;
+        }
+        temp->nextSlot = nextOpenSlot;
+        nextOpenSlot->nextSlot = NULL;
+    }
+    
+    target.numMessages++;
+    
     return 0;
 } /* MboxSend */
 
