@@ -18,6 +18,8 @@ struct mailbox {
 struct mailSlot {
     int       mboxID;
     int       status;
+    int       msgSize;
+    char      message[MAX_MESSAGE];
     slotPtr   nextSlot; //Next mailbox slot in the same mailbox
     // other items as needed...
 };

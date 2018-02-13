@@ -12,6 +12,7 @@
 #include "phase2.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "message.h"
 
@@ -77,6 +78,9 @@ int start1(char *arg)
     // Initialize USLOSS_IntVec and system call handlers,
     
     // allocate mailboxes for interrupt handlers.  Etc... 
+    for (i = 0; i < 7; i++){
+        MboxCreate(0, 0);
+    }
 
     // Create a process for start2, then block on a join until start2 quits
     if (DEBUG2 && debugflag2)
@@ -104,7 +108,7 @@ int MboxCreate(int slots, int slot_size)
 {
     // check if there are any open mailboxes
     if (numMailBoxes == MAXMBOX){
-        USLOSS_Console("MboxCreate(): no open mailboxes.");
+        //USLOSS_Console("MboxCreate(): no open mailboxes.");
         return -1;
     }
     // check if parameters are valid
@@ -113,20 +117,20 @@ int MboxCreate(int slots, int slot_size)
         return -1;
     }
     
-    mailbox mbox = MailBoxTable[nextMboxID % MAXMBOX];
+    mailbox* mbox = &MailBoxTable[nextMboxID % MAXMBOX];
     nextMboxID++;
-    while (mbox.mboxID != -1){
-        mbox = MailBoxTable[nextMboxID % MAXMBOX];
+    while (mbox->mboxID != -1){
+        mbox = &MailBoxTable[nextMboxID % MAXMBOX];
         nextMboxID++;
     }
     
-    mbox.mboxID = nextMboxID - 1;
-    mbox.totalSlots = slots;
-    mbox.slotSize = slot_size;
+    mbox->mboxID = nextMboxID - 1;
+    mbox->totalSlots = slots;
+    mbox->slotSize = slot_size;
     
     numMailBoxes++;
     
-    return mbox.mboxID;
+    return mbox->mboxID;
 } /* MboxCreate */
 
 /* ------------------------------------------------------------------------
@@ -155,12 +159,12 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
         return -3;
     }
     
-    mailbox target = MailBoxTable[mbox_id % MAXMBOX];
+    mailbox *target = &MailBoxTable[mbox_id % MAXMBOX];
     slotPtr temp;
     
     //TODO: Check for open slots in mailbox
     //Check if arguments are valid
-    if (mbox_id < 0 || msg_size < 0 || msg_size > target.slotSize){
+    if (mbox_id < 0 || msg_size < 0 || msg_size > target->slotSize){
         USLOSS_Console("MboxSend(): Invalid argument given.\n");
         return -1;
     }
@@ -169,11 +173,11 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     nextOpenSlot->status = SLOTFULL;
     
     //Add message to mailbox
-    if (target.slots == NULL){
-        target.slots = nextOpenSlot;
+    if (target->slots == NULL){
+        target->slots = nextOpenSlot;
         nextOpenSlot->nextSlot = NULL;
     }else{
-        temp = target.slots;
+        temp = target->slots;
         while (temp->nextSlot != NULL){
             temp = temp->nextSlot;
         }
@@ -181,7 +185,10 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
         nextOpenSlot->nextSlot = NULL;
     }
     
-    target.numMessages++;
+    memcpy(nextOpenSlot->message, msg_ptr, msg_size);
+    nextOpenSlot->msgSize = msg_size;
+    
+    target->numMessages++;
     
     return 0;
 } /* MboxSend */
@@ -198,7 +205,8 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
    ----------------------------------------------------------------------- */
 int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 {
-    return 0;
+    memcpy(msg_ptr, MailBoxTable[mbox_id % MAXMBOX].slots->message, msg_size);
+    return MailBoxTable[mbox_id % MAXMBOX].slots->msgSize;
 } /* MboxReceive */
 
 /* ------------------------------------------------------------------------
@@ -228,6 +236,7 @@ void initMailBox(mailbox *m){
 
 void initMailSlot(slotPtr s){
     s->mboxID = -1;
+    s->msgSize = -1;
     s->status = SLOTEMPTY;
     s->nextSlot = NULL;
 }
