@@ -17,8 +17,8 @@
 
 /* ------------------------- Prototypes ----------------------------------- */
 int start1 (char *);
-void initMailBox (mailbox);
-void initMailSlot (mailSlot);
+void initMailBox (mailbox*);
+void initMailSlot (slotPtr);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -66,12 +66,12 @@ int start1(char *arg)
 
     // Initialize the mail box table, slots, & other data structures.
     for (i = 0; i < MAXMBOX; i++){
-        initMailBox(MailBoxTable[i]);
+        initMailBox(&MailBoxTable[i]);
     }
     nextMboxID = 0;
     
     for (i = 0; i < MAXSLOTS; i++){
-        initMailSlot(MailSlotTable[i]);
+        initMailSlot(&MailSlotTable[i]);
     }
     nextOpenSlot = &MailSlotTable[0];
     // Initialize USLOSS_IntVec and system call handlers,
@@ -118,7 +118,6 @@ int MboxCreate(int slots, int slot_size)
     while (mbox.mboxID != -1){
         mbox = MailBoxTable[nextMboxID % MAXMBOX];
         nextMboxID++;
-        printf("%d\n", mbox.mboxID);
     }
     
     mbox.mboxID = nextMboxID - 1;
@@ -219,16 +218,16 @@ int check_io(void)
     return 0;
 } /* check_io */
 
-void initMailBox(mailbox m){
-    m.mboxID = -1;
-    m.numMessages = 0;
-    m.totalSlots = 0;
-    m.slotSize = 0;
-    m.slots = NULL;
+void initMailBox(mailbox *m){
+    m->mboxID = -1;
+    m->numMessages = 0;
+    m->totalSlots = 0;
+    m->slotSize = 0;
+    m->slots = NULL;
 }
 
-void initMailSlot(mailSlot s){
-    s.mboxID = -1;
-    s.status = SLOTEMPTY;
-    s.nextSlot = NULL;
+void initMailSlot(slotPtr s){
+    s->mboxID = -1;
+    s->status = SLOTEMPTY;
+    s->nextSlot = NULL;
 }
