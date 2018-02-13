@@ -1,9 +1,18 @@
 /* ------------------------------------------------------------------------
    phase2.c
+   Students: 
+   Veronica Reeves
+   Thai Pham
 
    University of Arizona
    Computer Science 452
-
+   
+   Summary:
+   For this second phase of the operating system, we will implement low-level 
+   process synchronization and communication via messages, and interrupt 
+   handlers. This phase, combined with phase 1, provides the building blocks
+   needed by later phases, which will implement more complicated 
+   process-control functions, device drivers, and virtual memory.
    ------------------------------------------------------------------------ */
 
 #include <usloss.h>
@@ -14,7 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "phase1.h"
 #include "message.h"
+
 
 /* ------------------------- Prototypes ----------------------------------- */
 int start1 (char *);
@@ -58,6 +69,13 @@ int filledSlots = 0;
    ----------------------------------------------------------------------- */
 int start1(char *arg)
 {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+
     int kidPid;
     int status;
     int i;
@@ -82,6 +100,7 @@ int start1(char *arg)
         MboxCreate(0, 0);
     }
 
+	enableInterrupts();
     // Create a process for start2, then block on a join until start2 quits
     if (DEBUG2 && debugflag2)
         USLOSS_Console("start1(): fork'ing start2 process\n");
@@ -106,6 +125,13 @@ int start1(char *arg)
    ----------------------------------------------------------------------- */
 int MboxCreate(int slots, int slot_size)
 {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+
     // check if there are any open mailboxes
     if (numMailBoxes == MAXMBOX){
         //USLOSS_Console("MboxCreate(): no open mailboxes.");
@@ -124,12 +150,13 @@ int MboxCreate(int slots, int slot_size)
         nextMboxID++;
     }
     
-    mbox->mboxID = nextMboxID - 1;
+    mbox->mboxID = nextMboxID - 1; // FIXME: need do a % operation 
     mbox->totalSlots = slots;
     mbox->slotSize = slot_size;
-    
+  
     numMailBoxes++;
-    
+
+	enableInterrupts();
     return mbox->mboxID;
 } /* MboxCreate */
 
@@ -143,6 +170,13 @@ int MboxCreate(int slots, int slot_size)
    ----------------------------------------------------------------------- */
 int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+
     //Check if there are available slots
     if (filledSlots == MAXSLOTS){
         USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
@@ -190,6 +224,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     
     target->numMessages++;
     
+	enableInterrupts();
     return 0;
 } /* MboxSend */
 
@@ -204,9 +239,143 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
    Side Effects - none.
    ----------------------------------------------------------------------- */
 int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
-{
-    memcpy(msg_ptr, MailBoxTable[mbox_id % MAXMBOX].slots->message, msg_size);
-    return MailBoxTable[mbox_id % MAXMBOX].slots->msgSize;
+{ 
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+	// variables needed 
+	mailbox *aBox = &MailBoxTable[mbox_id%MAXMBOX]; // location of the current mail box 
+	mboxProcPtr aBoxProcPtr; // new mail box process which is in blocked list 
+	
+	/* TP
+	-1: illegal values given as arguments; or, message being 
+	received is too large for receiver’s buffer. 
+	No data is copied in this case.
+	*/
+	if (msg_size > MAX_MESSAGE) { 
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): message size: %d > MAX_MESSAGE %d\n", msg_size, MAX_MESSAGE);
+		}
+		enableInterrupts(); 
+		return -1; 
+	}
+
+	/*TP 
+	If the mail box specified has not created 
+	return -1
+	*/
+	if (aBox->mboxID == -1) { 
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): Inactive mail box. boxPID:%\n", mbox_id%MAXMBOX);
+		}
+		enableInterrupts();
+		return -1;
+	}
+
+	/*TP
+	Case1:  If there is no message in the mailbox, the calling process is blocked until a message has
+	been received.
+	*/
+	if (aBox->numMessages == 0) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): empty maim box.Blocking calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
+		}
+		// extra checking 
+		if (aBox->slots == NULL) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("-> MboxReceive(): Empty mail box and there is no slot created.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			}
+
+			// block the calling process 
+			blockMe(EMPTY_BOX);
+			
+			//  Create new mail box  process 
+			aBoxProcPtr->processPID = getpid();
+			aBoxProcPtr->msgSize = msg_size;
+			aBoxProcPtr->msgPtr = msg_ptr;
+			aBoxProcPtr->nextMboxProc = NULL;
+
+			// Adding the new mail box process to the end of block receiver list to wait for sender
+			if (aBox->blockedReceivePrt == NULL) {
+				aBox->blockedReceivePrt = aBoxProcPtr;
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
+				}
+			}
+			else {
+				mboxProcPtr temp = aBox->blockedReceivePrt;
+				while (temp->nextMboxProc != NULL){
+					temp = temp->nextMboxProc;
+				}
+				temp = aBoxProcPtr;
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
+				}
+			}
+		// return message size
+			enableInterrupts();
+			return msg_size;
+		}
+	} else { // There is available message in the mailbox  
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): There is available message. Calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
+		}
+
+		// extra checking 
+		if (aBox->slots == NULL) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			}
+		}
+
+		// return the first message in the slot 
+		slotPtr aSlotPtr = aBox->slots;
+
+		// Check for empty slot
+		if (aSlotPtr->status == SLOTEMPTY) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("->-> MboxReceive(): Empty SLOT.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			}
+			enableInterrupts(); // re-enable interrupts
+			return -1;
+		}
+
+		// Copy information from the slot to *msg_ptr argument
+		memcpy(msg_ptr, aSlotPtr->message, aSlotPtr->msgSize);
+
+		// Remove the slot from current mailbox`s slots list
+		aBox->slots = aSlotPtr->nextSlot;
+		aBox->numMessages = aBox->numMessages - 1;
+
+		// Free the slot in MailSlotTable  
+		aSlotPtr->mboxID   = -1;
+		aSlotPtr->msgSize  = -1;
+		aSlotPtr->status   = SLOTEMPTY;
+		aSlotPtr->nextSlot = NULL;
+		
+		enableInterrupts(); 
+		return aSlotPtr->msgSize;
+	} // end Case1
+
+
+	/*TP
+	Case2: -3: process has been zap’d or the mailbox released while the process was
+	blocked on the mailbox.
+	*/
+	// check if the process is zapped or released after we had called lockMe() on it
+	if (isZapped() || aBox->mboxID = -1) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): Calling process is zapped. PID: %d. Mail box ID: %d\n", getpid(), aBox->mboxID);
+		}
+		enableInterrupts(); 
+		return -3;
+	}
+
+    // memcpy(msg_ptr, MailBoxTable[mbox_id % MAXMBOX].slots->message, msg_size);
+    // return MailBoxTable[mbox_id % MAXMBOX].slots->msgSize;
 } /* MboxReceive */
 
 /* ------------------------------------------------------------------------
@@ -226,12 +395,17 @@ int check_io(void)
     return 0;
 } /* check_io */
 
+/* ------------------------------------------------------------------------
+   Initializing MailBox and MailSlot struct. 
+   ------------------------------------------------------------------------ */
 void initMailBox(mailbox *m){
     m->mboxID = -1;
     m->numMessages = 0;
     m->totalSlots = 0;
     m->slotSize = 0;
     m->slots = NULL;
+	m->blockedReceivePrt = NULL;
+	m->blockedSendPrt = NULL;
 }
 
 void initMailSlot(slotPtr s){
@@ -240,3 +414,43 @@ void initMailSlot(slotPtr s){
     s->status = SLOTEMPTY;
     s->nextSlot = NULL;
 }
+/* ------------------------------------------------------------------------
+Name - enableInterrupts()
+Purpose - Turn the interrupts ON iff we are in kernel mode
+if not in kernel mode, print an error message and halt USLOSS
+Parameters - None
+Returns - None
+Side Effects -
+----------------------------------------------------------------------- */
+void disableInterrupts()
+{
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	USLOSS_PsrSet(USLOSS_PsrGet() ^ (USLOSS_PsrGet() & 0x2));
+
+} /* disableInterrupts */
+
+  /* ------------------------------------------------------------------------
+  Name - enableInterrupts()
+  Purpose - Turn the interrupts ON iff we are in kernel mode
+  if not in kernel mode, print an error message and halt USLOSS
+  Parameters - None
+  Returns - None
+  Side Effects -
+  ----------------------------------------------------------------------- */
+void enableInterrupts()
+{
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);
+
+} /* enableInterrupts */
+/* ------------------------------------------------------------------------
+
+------------------------------------------------------------------------ */
