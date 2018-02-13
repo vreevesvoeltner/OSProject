@@ -46,7 +46,7 @@ int numMailBoxes = 0;
 
 mailSlot MailSlotTable[MAXSLOTS];
 
-slotPtr nextOpenSlot;
+int nextOpenSlot;
 
 int filledSlots = 0;
 
@@ -92,7 +92,7 @@ int start1(char *arg)
     for (i = 0; i < MAXSLOTS; i++){
         initMailSlot(&MailSlotTable[i]);
     }
-    nextOpenSlot = &MailSlotTable[0];
+    nextOpenSlot = 0;
     // Initialize USLOSS_IntVec and system call handlers,
     
     // allocate mailboxes for interrupt handlers.  Etc... 
@@ -194,7 +194,8 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     }
     
     mailbox *target = &MailBoxTable[mbox_id % MAXMBOX];
-    slotPtr temp;
+    slotPtr temp,
+            newSlot;
     
     //TODO: Check for open slots in mailbox
     //Check if arguments are valid
@@ -203,26 +204,34 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
         return -1;
     }
     
-    nextOpenSlot->mboxID = mbox_id;
-    nextOpenSlot->status = SLOTFULL;
+    newSlot = &MailSlotTable[nextOpenSlot];
+    newSlot->mboxID = mbox_id;
+    newSlot->status = SLOTFULL;
     
     //Add message to mailbox
     if (target->slots == NULL){
-        target->slots = nextOpenSlot;
-        nextOpenSlot->nextSlot = NULL;
+        target->slots = newSlot;
+        newSlot->nextSlot = NULL;
     }else{
         temp = target->slots;
         while (temp->nextSlot != NULL){
             temp = temp->nextSlot;
         }
-        temp->nextSlot = nextOpenSlot;
-        nextOpenSlot->nextSlot = NULL;
+        temp->nextSlot = newSlot;
+        newSlot->nextSlot = NULL;
     }
     
-    memcpy(nextOpenSlot->message, msg_ptr, msg_size);
-    nextOpenSlot->msgSize = msg_size;
+    memcpy(newSlot->message, msg_ptr, msg_size);
+    newSlot->msgSize = msg_size;
     
     target->numMessages++;
+    filledSlots++;
+    
+    if(filledSlots != MAXSLOTS){
+        while (MailSlotTable[nextOpenSlot].mboxID != -1){
+            nextOpenSlot = (nextOpenSlot + 1) % MAXSLOTS;
+        }
+    }
     
 	enableInterrupts();
     return 0;
