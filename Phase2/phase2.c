@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-   phase2.c
+   phase2.c v1
    Students: 
    Veronica Reeves
    Thai Pham
@@ -31,6 +31,8 @@
 int start1 (char *);
 void initMailBox (mailbox*);
 void initMailSlot (slotPtr);
+void disableInterrupts();
+void enableInterrupts();
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -257,7 +259,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	disableInterrupts();
 	// variables needed 
 	mailbox *aBox = &MailBoxTable[mbox_id%MAXMBOX]; // location of the current mail box 
-	mboxProcPtr aBoxProcPtr; // new mail box process which is in blocked list 
+	mboxProc aBoxProc; // new mail box process which is in blocked list 
 	
 	/* TP
 	-1: illegal values given as arguments; or, message being 
@@ -302,14 +304,14 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			blockMe(EMPTY_BOX);
 			
 			//  Create new mail box  process 
-			aBoxProcPtr->processPID = getpid();
-			aBoxProcPtr->msgSize = msg_size;
-			aBoxProcPtr->msgPtr = msg_ptr;
-			aBoxProcPtr->nextMboxProc = NULL;
+			aBoxProc.processPID = getpid();
+			aBoxProc.msgSize = msg_size;
+			aBoxProc.msgPtr = msg_ptr;
+			aBoxProc.nextMboxProc = NULL;
 
 			// Adding the new mail box process to the end of block receiver list to wait for sender
 			if (aBox->blockedReceivePrt == NULL) {
-				aBox->blockedReceivePrt = aBoxProcPtr;
+				aBox->blockedReceivePrt = &aBoxProc;
 				if (DEBUG2 && debugflag2) {
 					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
 				}
@@ -319,7 +321,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 				while (temp->nextMboxProc != NULL){
 					temp = temp->nextMboxProc;
 				}
-				temp = aBoxProcPtr;
+				temp = &aBoxProc;
 				if (DEBUG2 && debugflag2) {
 					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
 				}
@@ -375,7 +377,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	blocked on the mailbox.
 	*/
 	// check if the process is zapped or released after we had called lockMe() on it
-	if (isZapped() || aBox->mboxID = -1) {
+	if (isZapped() || aBox->mboxID == -1) {
 		if (DEBUG2 && debugflag2) {
 			USLOSS_Console("-> MboxReceive(): Calling process is zapped. PID: %d. Mail box ID: %d\n", getpid(), aBox->mboxID);
 		}
@@ -383,6 +385,11 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 		return -3;
 	}
 
+	if (DEBUG2 && debugflag2) {
+		USLOSS_Console("-> MboxReceive(): FIXME: we shold not see this message! process PID: %d. Mail box ID: %d\n", getpid(), aBox->mboxID);
+	}
+
+	return -99; // get away from the warning
     // memcpy(msg_ptr, MailBoxTable[mbox_id % MAXMBOX].slots->message, msg_size);
     // return MailBoxTable[mbox_id % MAXMBOX].slots->msgSize;
 } /* MboxReceive */
@@ -414,7 +421,6 @@ void initMailBox(mailbox *m){
     m->slotSize = 0;
     m->slots = NULL;
 	m->blockedReceivePrt = NULL;
-	m->blockedSendPrt = NULL;
 }
 
 void initMailSlot(slotPtr s){
@@ -437,9 +443,9 @@ void disableInterrupts()
 		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
-
-	USLOSS_PsrSet(USLOSS_PsrGet() ^ (USLOSS_PsrGet() & 0x2));
-
+	else {
+		USLOSS_PsrSet(USLOSS_PsrGet() ^ (USLOSS_PsrGet() & 0x2));
+	}
 } /* disableInterrupts */
 
   /* ------------------------------------------------------------------------
@@ -456,10 +462,11 @@ void enableInterrupts()
 		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
-
-	USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);
-
+	else {
+		USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);
+	}
 } /* enableInterrupts */
 /* ------------------------------------------------------------------------
-
+FIX ME:  warning: ignoring return value of ‘USLOSS_PsrSet’, 
+declared with attribute warn_unused_result [-Wunused-result]
 ------------------------------------------------------------------------ */
