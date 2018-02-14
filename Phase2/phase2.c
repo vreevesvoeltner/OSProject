@@ -37,7 +37,7 @@ void enableInterrupts();
 
 /* -------------------------- Globals ------------------------------------- */
 
-int debugflag2 = 1;
+int debugflag2 = 0;
 
 // the mail boxes 
 mailbox MailBoxTable[MAXMBOX];
@@ -171,13 +171,15 @@ int MboxCreate(int slots, int slot_size)
    Side Effects - none.
    ----------------------------------------------------------------------- */
 int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
-{
+{   
 	// Make sure in Kernel mode
 	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
 		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
 	disableInterrupts();
+
+	int result; // return value 
 
     //Check if there are available slots
     if (filledSlots == MAXSLOTS){
@@ -199,42 +201,82 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     slotPtr temp,
             newSlot;
     
-    //TODO: Check for open slots in mailbox
     //Check if arguments are valid
     if (mbox_id < 0 || msg_size < 0 || msg_size > target->slotSize){
         USLOSS_Console("MboxSend(): Invalid argument given.\n");
         return -1;
     }
     
-    newSlot = &MailSlotTable[nextOpenSlot];
-    newSlot->mboxID = mbox_id;
-    newSlot->status = SLOTFULL;
-    
-    //Add message to mailbox
-    if (target->slots == NULL){
-        target->slots = newSlot;
-        newSlot->nextSlot = NULL;
-    }else{
-        temp = target->slots;
-        while (temp->nextSlot != NULL){
-            temp = temp->nextSlot;
-        }
-        temp->nextSlot = newSlot;
-        newSlot->nextSlot = NULL;
-    }
-    
-    memcpy(newSlot->message, msg_ptr, msg_size);
-    newSlot->msgSize = msg_size;
-    
-    target->numMessages++;
-    filledSlots++;
-    
-    if(filledSlots != MAXSLOTS){
-        while (MailSlotTable[nextOpenSlot].mboxID != -1){
-            nextOpenSlot = (nextOpenSlot + 1) % MAXSLOTS;
-        }
-    }
-    
+
+	/*TP
+	If there is receiver is waiting for the message
+		send message to the waiting receiver
+		and unlocked the waiting receiver 
+	If there is no receiver
+		add new message to the mailbox slots 
+		and wait for receiver
+	*/
+
+	if (target->blockedReceivePrt != NULL) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxSend():There is receiver waiting at boxID: %\n", target->mboxID);
+		}
+		
+		// get the waiting receiver
+		mboxProcPtr waitingReceiver = target->blockedReceivePrt;
+
+		// send message to waiting receiver 
+		waitingReceiver->msgSize = msg_size;
+		memcpy(waitingReceiver->msgPtr, msg_ptr, msg_size);
+
+		// remove and reset pointer in waiting receiver
+		target->blockedReceivePrt = waitingReceiver->nextMboxProc;
+		waitingReceiver->nextMboxProc = NULL;
+
+		//
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxSend():did send message to process PID: %d at boxID: %\n",waitingReceiver->processPID, target->mboxID);
+		}
+
+		// unblocked the calling receiver`s process 
+		unblockProc(waitingReceiver->processPID);
+	}
+	else { /// no waiting receiver 
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxSend():There is NO receiver waiting. Add new message to slots at boxID: %\n",target->mboxID);
+		}
+
+		newSlot = &MailSlotTable[nextOpenSlot];
+		newSlot->mboxID = mbox_id;
+		newSlot->status = SLOTFULL;
+
+		//Add message to mailbox
+		if (target->slots == NULL) {
+			target->slots = newSlot;
+			newSlot->nextSlot = NULL;
+		}
+		else {
+			temp = target->slots;
+			while (temp->nextSlot != NULL) {
+				temp = temp->nextSlot;
+			}
+			temp->nextSlot = newSlot;
+			newSlot->nextSlot = NULL;
+		}
+
+		memcpy(newSlot->message, msg_ptr, msg_size);
+		newSlot->msgSize = msg_size;
+
+		target->numMessages++;
+		filledSlots++;
+
+		if (filledSlots != MAXSLOTS) {
+			while (MailSlotTable[nextOpenSlot].mboxID != -1) {
+				nextOpenSlot = (nextOpenSlot + 1) % MAXSLOTS;
+			}
+		}	
+	}
+
 	enableInterrupts();
     return 0;
 } /* MboxSend */
@@ -310,7 +352,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			if (aBox->blockedReceivePrt == NULL) {
 				aBox->blockedReceivePrt = &aBoxProc;
 				if (DEBUG2 && debugflag2) {
-					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
+					USLOSS_Console("->-> MboxReceive():  First new mail process successful added. Mail box ID: %d\n", aBox->mboxID);
 				}
 			}
 			else {
@@ -470,4 +512,7 @@ void enableInterrupts()
 /* ------------------------------------------------------------------------
 FIX ME:  warning: ignoring return value of ‘USLOSS_PsrSet’, 
 declared with attribute warn_unused_result [-Wunused-result]
+
+STOPHERE: test05: 
+	-> everything working ok except  return from receiver  == 100? 
 ------------------------------------------------------------------------ */
