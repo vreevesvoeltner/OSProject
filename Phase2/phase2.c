@@ -37,7 +37,7 @@ void enableInterrupts();
 
 /* -------------------------- Globals ------------------------------------- */
 
-int debugflag2 = 0;
+int debugflag2 = 1;
 
 // the mail boxes 
 mailbox MailBoxTable[MAXMBOX];
@@ -292,17 +292,14 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	*/
 	if (aBox->numMessages == 0) {
 		if (DEBUG2 && debugflag2) {
-			USLOSS_Console("-> MboxReceive(): empty maim box.Blocking calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
+			USLOSS_Console("-> MboxReceive(): empty mail box.Blocking calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
 		}
 		// extra checking 
 		if (aBox->slots == NULL) {
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("-> MboxReceive(): Empty mail box and there is no slot created.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
 			}
-
-			// block the calling process 
-			blockMe(EMPTY_BOX);
-			
+					
 			//  Create new mail box  process 
 			aBoxProc.processPID = getpid();
 			aBoxProc.msgSize = msg_size;
@@ -326,7 +323,11 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 					USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
 				}
 			}
-		// return message size
+			
+			// block the calling process 
+			blockMe(EMPTY_BOX);
+
+			// return message size
 			enableInterrupts();
 			return msg_size;
 		}
@@ -350,7 +351,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("->-> MboxReceive(): Empty SLOT.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
 			}
-			enableInterrupts(); // re-enable interrupts
+			enableInterrupts(); 
 			return -1;
 		}
 
