@@ -17,6 +17,7 @@ struct mailbox {
     // other items as needed...
 	//-----TP----------
 	mboxProcPtr blockedReceivePrt; // pointing to the first pointer in the list
+	mboxProcPtr blockedSendPrt; // pointing to the first pointer in the list 
 	//-----------------
 };
 
@@ -57,4 +58,6 @@ struct mboxProc {
 
 #define SLOTEMPTY 0
 #define SLOTFULL 1
+//----------TP--------//
 #define EMPTY_BOX 15 // There is no message in the current mail box
+#define FULL_BOX  16 // The current mail box is out of slots to use  
