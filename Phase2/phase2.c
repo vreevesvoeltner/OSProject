@@ -37,7 +37,7 @@ void enableInterrupts();
 
 /* -------------------------- Globals ------------------------------------- */
 
-int debugflag2 = 1;
+int debugflag2 = 0;
 
 // the mail boxes 
 mailbox MailBoxTable[MAXMBOX];
@@ -367,7 +367,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			
 			// block the calling process 
 			blockMe(EMPTY_BOX);
-
+			
 			// return message size
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("->-> MboxReceive(): Return msg_size after blockme() at mail box ID: %d\n", aBox->mboxID);
@@ -382,9 +382,9 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 
 		// extra checking 
 		if (aBox->slots == NULL) {
-			if (DEBUG2 && debugflag2) {
+			//if (DEBUG2 && debugflag2) {
 				USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-			}
+			//}
 		}
 
 		// return the first message in the slot 
@@ -392,15 +392,18 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 
 		// Check for empty slot
 		if (aSlotPtr->status == SLOTEMPTY) {
-			if (DEBUG2 && debugflag2) {
-				USLOSS_Console("->-> MboxReceive(): Empty SLOT.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-			}
+			//if (DEBUG2 && debugflag2) {
+				USLOSS_Console("->-> MboxReceive(): try to send an empty SLOT. Calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			//}
 			enableInterrupts(); 
 			return -1;
 		}
 
 		// Copy information from the slot to *msg_ptr argument
 		memcpy(msg_ptr, aSlotPtr->message, aSlotPtr->msgSize);
+
+		// store msg_size for return value 
+		int result = aSlotPtr->msgSize;
 
 		// Remove the slot from current mailbox`s slots list
 		aBox->slots = aSlotPtr->nextSlot;
@@ -417,7 +420,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			USLOSS_Console("->-> MboxReceive(): Return msg_size without calling block me at mail box ID: %d\n", aBox->mboxID);
 		}
 		enableInterrupts(); 
-		return aSlotPtr->msgSize;
+		return result;
 	} // end Case1
 
 	if (DEBUG2 && debugflag2) {
