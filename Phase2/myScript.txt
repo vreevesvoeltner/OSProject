@@ -12,6 +12,6 @@ do
 	else
 		make test$i
 		test$i > t$i.out
-		diff t0$i.out ./testResults/test0$i.txt > diff0$i.out
+		diff t$i.out ./testResults/test$i.txt > diff$i.out
 	fi
 done 
