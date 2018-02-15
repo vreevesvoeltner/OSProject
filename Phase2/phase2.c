@@ -184,12 +184,6 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
         USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
         USLOSS_Halt(1);
     }
-
-    //Check if process was zapped
-    if (isZapped()){
-        USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
-        return -3;
-    }
     
 	//Check if mailbox has been released
     if (MailBoxTable[mbox_id % MAXMBOX].mboxID == -1){
@@ -283,7 +277,13 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 			}
 
 			// block the process calling send
-			blockMe(FULL_BOX); 
+			blockMe(FULL_BOX);
+
+			//Check if process was zapped
+			if (isZapped()) {
+				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+				return -3;
+			}
 		}
 		else {//Add message to mailbox
 			if (DEBUG2 && debugflag2) {
@@ -415,6 +415,12 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			// block the calling process 
 			blockMe(EMPTY_BOX);
 			
+			//Check if process was zapped
+			if (isZapped()) {
+				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+				return -3;
+			}
+
 			// return message size
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("->-> MboxReceive(): Return msg_size after blockme() at mail box ID: %d\n", aBox->mboxID);
