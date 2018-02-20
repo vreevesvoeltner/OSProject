@@ -244,8 +244,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 		After block sender, add new message to block sender list
 		*/
 		
-		// variables needed .TP
-		mboxProc aBoxProc; // new mail box process which is in blocked list 
+		
 
 		if (target->numMessages == target->totalSlots) {
 			if (DEBUG2 && debugflag2) {
@@ -253,6 +252,9 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 				USLOSS_Console("-> MboxSend(): %d in use. Max available slots %d.\n", target->numMessages, target->totalSlots);
 			}
 			//  Create new mail box  process 
+			// variables needed .TP
+
+			mboxProc aBoxProc; // new mail box process which is in blocked list 
 			aBoxProc.processPID = getpid();
 			aBoxProc.msgSize = msg_size;
 			aBoxProc.msgPtr = msg_ptr;
@@ -270,7 +272,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 				while (temp->nextMboxProc != NULL) {
 					temp = temp->nextMboxProc;
 				}
-				temp = &aBoxProc;
+				temp->nextMboxProc = &aBoxProc;
 				if (DEBUG2 && debugflag2) {
 					USLOSS_Console("->-> MboxSend():  New mail process successful added to blockSend.\n Mail box ID: %d, Message size:%d \n", target->mboxID, aBoxProc.msgSize);
 				}
@@ -278,6 +280,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 
 			// block the process calling send
 			blockMe(FULL_BOX);
+			disableInterrupts();
 
 			//Check if process was zapped
 			if (isZapped()) {
@@ -414,6 +417,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			
 			// block the calling process 
 			blockMe(EMPTY_BOX);
+			disableInterrupts();
 			
 			//Check if process was zapped
 			if (isZapped()) {
@@ -491,16 +495,24 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			}
 			// some extra checking 
 			if (aBox->numMessages != aBox->totalSlots -1) { // -1 due to the remove slot above 
-					USLOSS_Console("->-> MboxReceive(): Adding bock send to Slots @ Mail box ID: %d. \n", aBox->mboxID);
-					USLOSS_Console("->-> MboxReceive(): But NumMessage: %d != Max number of slots allowed: %d\n", aBox->numMessages, aBox->totalSlots);
+				USLOSS_Console("->-> MboxReceive(): ERROR: Adding bock send to Slots @ Mail box ID: %d. \n", aBox->mboxID);
+				USLOSS_Console("->-> MboxReceive(): But NumMessage: %d != Max number of slots allowed: %d\n", aBox->numMessages, aBox->totalSlots);
 			}
 
 			mboxProcPtr aBlockedSendMsg = aBox->blockedSendPrt;
 			aBox->blockedSendPrt = aBlockedSendMsg->nextMboxProc;
 
+			// some debug outputs 
+			if (aBox->blockedSendPrt == NULL) {
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("->-> MboxReceive(): ERROR: blockedSentPtr is NULL2 Mail box ID: %d. \n", aBlockedSendMsg->nextMboxProc, aBox->mboxID);
+				}
+			}
+			
 			aSlotPtr->mboxID = mbox_id;
 			aSlotPtr->status = SLOTFULL;
 			aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
+			memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
 			if (aBox->slots == NULL) {
 				aBox->slots = aSlotPtr;
 			}
@@ -511,7 +523,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 				}
 				temp->nextSlot = aSlotPtr;
 			}
-			memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
+			
 
 			aBox->numMessages++;
 			filledSlots++;
