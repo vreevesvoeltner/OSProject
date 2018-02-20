@@ -61,7 +61,7 @@ struct mboxProc {
 #define SLOTFULL 1
 
 #define MBOX_OPEN 0
-#define MBOX_RELEASING 1
+#define MBOX_RELEASED 1
 //----------TP--------//
 #define EMPTY_BOX 15 // There is no message in the current mail box
 #define FULL_BOX  16 // The current mail box is out of slots to use  
