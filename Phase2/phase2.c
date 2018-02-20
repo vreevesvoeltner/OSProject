@@ -39,7 +39,6 @@ int MboxSend(int mailboxID, void *message, int messageSize);
 int MboxReceive(int mailboxID, void *message, int maxMessageSize);
 int MboxRelease(int mailboxID);
 
-
 /* -------------------------- Globals ------------------------------------- */
 
 int debugflag2 = 0;
