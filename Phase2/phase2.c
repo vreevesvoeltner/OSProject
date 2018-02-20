@@ -33,6 +33,11 @@ void initMailBox (mailbox*);
 void initMailSlot (slotPtr);
 void disableInterrupts();
 void enableInterrupts();
+int MboxCondSend(int mailboxID, void *message, int messageSize);
+int MboxCondReceive(int mailboxID, void *message, int maxMessageSize);
+int MboxSend(int mailboxID, void *message, int messageSize);
+int MboxReceive(int mailboxID, void *message, int maxMessageSize);
+int MboxRelease(int mailboxID);
 
 
 /* -------------------------- Globals ------------------------------------- */
@@ -172,7 +177,7 @@ int MboxCreate(int slots, int slot_size)
    Returns - zero if successful, -1 if invalid args.
    Side Effects - none.
    ----------------------------------------------------------------------- */
-int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
+int MboxSend(int mailboxID, void *message, int messageSize)
 {   
 	// Make sure in Kernel mode
 	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -188,17 +193,17 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     }
     
 	//Check if mailbox has been released
-    if (MailBoxTable[mbox_id % MAXMBOX].mboxID == -1){
+    if (MailBoxTable[mailboxID % MAXMBOX].mboxID == -1){
         USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
         return -3;
     }
     
-    mailbox *target = &MailBoxTable[mbox_id % MAXMBOX];
+    mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
     slotPtr temp,
             newSlot; 
     
     //Check if arguments are valid
-    if (mbox_id < 0 || msg_size < 0 || msg_size > target->slotSize){
+    if (mailboxID < 0 || messageSize < 0 || messageSize > target->slotSize){
         USLOSS_Console("MboxSend(): Invalid argument given.\n");
         return -1;
     }
@@ -222,8 +227,8 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 		mboxProcPtr waitingReceiver = target->blockedReceivePrt;
 
 		// send message to waiting receiver 
-		waitingReceiver->msgSize = msg_size;
-		memcpy(waitingReceiver->msgPtr, msg_ptr, msg_size);
+		waitingReceiver->msgSize = messageSize;
+		memcpy(waitingReceiver->msgPtr, message, messageSize);
 
 		// remove and reset pointer in waiting receiver
 		target->blockedReceivePrt = waitingReceiver->nextMboxProc;
@@ -255,8 +260,8 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 
 			mboxProc aBoxProc; // new mail box process which is in blocked list 
 			aBoxProc.processPID = getpid();
-			aBoxProc.msgSize = msg_size;
-			aBoxProc.msgPtr = msg_ptr;
+			aBoxProc.msgSize = messageSize;
+			aBoxProc.msgPtr = message;
 			aBoxProc.nextMboxProc = NULL;
 
 			// Adding the new mail box process to the end of block send list to wait for receiver 
@@ -304,7 +309,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 			}
 
 			newSlot = &MailSlotTable[nextOpenSlot];
-			newSlot->mboxID = mbox_id;
+			newSlot->mboxID = mailboxID;
 			newSlot->status = SLOTFULL;
 						
 			if (target->slots == NULL) {
@@ -320,8 +325,8 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 				newSlot->nextSlot = NULL;
 			}
 
-			memcpy(newSlot->message, msg_ptr, msg_size);
-			newSlot->msgSize = msg_size;
+			memcpy(newSlot->message, message, messageSize);
+			newSlot->msgSize = messageSize;
 
 			target->numMessages++;
 			filledSlots++;
@@ -452,17 +457,14 @@ int MboxRelease(int mailboxID) {
 
 }
 
-
 /* ------------------------------------------------------------------------
    Name - MboxReceive
    Purpose - Get a msg from a slot of the indicated mailbox.
              Block the receiving process if no msg available.
-   Parameters - mailbox id, pointer to put data of msg, max # of bytes that
-                can be received.
    Returns - actual size of msg if successful, -1 if invalid args.
-   Side Effects - none.
+   Side Effects - 
    ----------------------------------------------------------------------- */
-int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
+int MboxReceive(int mailboxID, void *message, int maxMessageSize)
 { 
 	// Make sure in Kernel mode
 	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -471,7 +473,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	}
 	disableInterrupts();
 	// variables needed .TP
-	mailbox *aBox = &MailBoxTable[mbox_id%MAXMBOX]; // location of the current mail box 
+	mailbox *aBox = &MailBoxTable[mailboxID%MAXMBOX]; // location of the current mail box 
 	mboxProc aBoxProc; // new mail box process which is in blocked list 
 	
 	/* TP
@@ -479,9 +481,9 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	received is too large for receiver’s buffer. 
 	No data is copied in this case.
 	*/
-	if (msg_size > MAX_MESSAGE) { 
+	if (maxMessageSize > MAX_MESSAGE) { 
 		if (DEBUG2 && debugflag2) {
-			USLOSS_Console("-> MboxReceive(): message size: %d > MAX_MESSAGE %d\n", msg_size, MAX_MESSAGE);
+			USLOSS_Console("-> MboxReceive(): message size: %d > MAX_MESSAGE %d\n", maxMessageSize, MAX_MESSAGE);
 		}
 		enableInterrupts(); 
 		return -1; 
@@ -493,7 +495,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	*/
 	if (aBox->mboxID == -1) { 
 		if (DEBUG2 && debugflag2) {
-			USLOSS_Console("-> MboxReceive(): Inactive mail box. boxPID:%\n", mbox_id%MAXMBOX);
+			USLOSS_Console("-> MboxReceive(): Inactive mail box. boxPID:%\n", mailboxID%MAXMBOX);
 		}
 		enableInterrupts();
 		return -1;
@@ -515,8 +517,8 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 					
 			//  Create new mail box  process 
 			aBoxProc.processPID = getpid();
-			aBoxProc.msgSize = msg_size;
-			aBoxProc.msgPtr = msg_ptr;
+			aBoxProc.msgSize = maxMessageSize;
+			aBoxProc.msgPtr = message;
 			aBoxProc.nextMboxProc = NULL;
 
 			// Adding the new mail box process to the end of block receiver list to wait for sender
@@ -552,7 +554,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			
 			// return message size
 			if (DEBUG2 && debugflag2) {
-				USLOSS_Console("->-> MboxReceive(): Return msg_size after blockme() at mail box ID: %d\n", aBox->mboxID);
+				USLOSS_Console("->-> MboxReceive(): Return messageSize after blockme() at mail box ID: %d\n", aBox->mboxID);
 			}
 			enableInterrupts();
 			return aBoxProc.msgSize;
@@ -581,10 +583,10 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			return -1;
 		}
 
-		// Copy information from the slot to *msg_ptr argument
-		memcpy(msg_ptr, aSlotPtr->message, aSlotPtr->msgSize);
+		// Copy information from the slot to *message argument
+		memcpy(message, aSlotPtr->message, aSlotPtr->msgSize);
 
-		// store msg_size for return value 
+		// store messageSize for return value 
 		int result = aSlotPtr->msgSize;
 
 		// Remove the slot from current mailbox`s slots list
@@ -634,7 +636,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 				}
 			}
 			
-			aSlotPtr->mboxID = mbox_id;
+			aSlotPtr->mboxID = mailboxID;
 			aSlotPtr->status = SLOTFULL;
 			aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
 			memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
@@ -658,7 +660,7 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 				
 		// return msg size
 		if (DEBUG2 && debugflag2) {
-			USLOSS_Console("->-> MboxReceive(): Return msg_size without calling block me at mail box ID: %d\n", aBox->mboxID);
+			USLOSS_Console("->-> MboxReceive(): Return messageSize without calling block me at mail box ID: %d\n", aBox->mboxID);
 		}
 		enableInterrupts(); 
 		return result;
@@ -669,9 +671,332 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 	}
 
 	return -99; // get away from the warning
-    // memcpy(msg_ptr, MailBoxTable[mbox_id % MAXMBOX].slots->message, msg_size);
-    // return MailBoxTable[mbox_id % MAXMBOX].slots->msgSize;
+    // memcpy(message, MailBoxTable[mailboxID % MAXMBOX].slots->message, msg_size);
+    // return MailBoxTable[mailboxID % MAXMBOX].slots->msgSize;
 } /* MboxReceive */
+
+  /* ------------------------------------------------------------------------
+  Name - MboxCondSend
+  Purpose - Conditionally send a message to a mailbox. Do not block the invoking process.
+  If there is no empty slot in the mailbox in which to place the message, the value -2 is
+  returned. Also return -2 in the case that all the mailbox slots in the system are used and
+  none are available to allocate for this message.
+  Returns - 
+  -3: process has been zap’d.
+  -2: mailbox full, message not sent; or no slots available in the system.
+  -1: illegal values given as arguments.
+   0: message sent successfully.
+
+  Side Effects - none.
+  ----------------------------------------------------------------------- */
+int MboxCondSend(int mailboxID, void *message, int messageSize) {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+
+	//Check if there are available slots in the SlotTable[] 
+	if (filledSlots == MAXSLOTS) {
+		USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
+		USLOSS_Halt(1);
+	}
+
+	//Check if mailbox has been released
+	if (MailBoxTable[mailboxID % MAXMBOX].mboxID == -1) {
+		USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
+		return -3;
+	}
+
+	mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
+	slotPtr temp,
+		newSlot;
+
+	//Check if arguments are valid
+	if (mailboxID < 0 || messageSize < 0 || messageSize > target->slotSize) {
+		USLOSS_Console("MboxSend(): Invalid argument given.\n");
+		return -1;
+	}
+
+	//-3: process has been zap’d 
+	if (isZapped())  {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+		}
+		enableInterrupts();
+		return -3;
+	}
+
+	/*TP
+	If there is receiver is waiting for the message
+	send message to the waiting receiver
+	and unlocked the waiting receiver
+	If there is no receiver
+	add new message to the mailbox slots
+	and wait for receiver
+	*/
+	if (target->blockedReceivePrt != NULL) {
+
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxSend():There is receiver waiting at boxID: %d\n", target->mboxID);
+		}
+
+		// get the waiting receiver
+		mboxProcPtr waitingReceiver = target->blockedReceivePrt;
+
+		// send message to waiting receiver 
+		waitingReceiver->msgSize = messageSize;
+		memcpy(waitingReceiver->msgPtr, message, messageSize);
+
+		// remove and reset pointer in waiting receiver
+		target->blockedReceivePrt = waitingReceiver->nextMboxProc;
+		waitingReceiver->nextMboxProc = NULL;
+
+		//
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxSend():did send message to process PID: %d at boxID: %d\n", waitingReceiver->processPID, target->mboxID);
+		}
+
+		// unblocked the calling receiver`s process 
+		unblockProc(waitingReceiver->processPID);
+	}
+	else { /// no waiting receiver 
+		   /*TP
+		   Block the sender if this mailbox has no available slots.
+		   For example, mailbox has 5 slots and all of them already
+		   have a message.
+		   After block sender, add new message to block sender list
+		   */
+
+		if (target->numMessages == target->totalSlots) {
+			if (DEBUG2 && debugflag2)
+				USLOSS_Console("MboxSend(): conditional send failed, returning -2\n");
+			enableInterrupts(); // re-enable interrupts
+			return -2;		
+		}
+		else {//Add message to mailbox
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("-> MboxSend():There is NO receiver waiting. Add new message to slots at boxID: %d.\n", target->mboxID);
+				USLOSS_Console("-> MboxSend(): %d in use. Max available slots %d.\n", target->numMessages, target->totalSlots);
+			}
+
+			newSlot = &MailSlotTable[nextOpenSlot];
+			newSlot->mboxID = mailboxID;
+			newSlot->status = SLOTFULL;
+
+			if (target->slots == NULL) {
+				target->slots = newSlot;
+				newSlot->nextSlot = NULL;
+			}
+			else {
+				temp = target->slots;
+				while (temp->nextSlot != NULL) {
+					temp = temp->nextSlot;
+				}
+				temp->nextSlot = newSlot;
+				newSlot->nextSlot = NULL;
+			}
+
+			memcpy(newSlot->message, message, messageSize);
+			newSlot->msgSize = messageSize;
+
+			target->numMessages++;
+			filledSlots++;
+
+			if (filledSlots != MAXSLOTS) {
+				while (MailSlotTable[nextOpenSlot].mboxID != -1) {
+					nextOpenSlot = (nextOpenSlot + 1) % MAXSLOTS;
+				}
+			}
+		}
+
+	}
+
+	enableInterrupts();
+	return 0;
+}
+
+/* ------------------------------------------------------------------------
+Name - MboxCondReceive
+Purpose - Conditionally receive a message from a mailbox. Do not block 
+the invoking process. If there is no message in the mailbox, the value -2 
+is returned.
+Returns - -3: process has been zap’d.
+-2: no message available to receive.
+-1: illegal values given as arguments; or, message sent is too large for
+receiver’s buffer (no data copied in this case).
+>= 0: the size of the message received.
+----------------------------------------------------------------------- */
+int MboxCondReceive(int mailboxID, void *message, int maxMessageSize) {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+	// variables needed .TP
+	mailbox *aBox = &MailBoxTable[mailboxID%MAXMBOX]; // location of the current mail box 
+	mboxProc aBoxProc; // new mail box process which is in blocked list 
+
+					   /* TP
+					   -1: illegal values given as arguments; or, message being
+					   received is too large for receiver’s buffer.
+					   No data is copied in this case.
+					   */
+	if (maxMessageSize > MAX_MESSAGE) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): message size: %d > MAX_MESSAGE %d\n", maxMessageSize, MAX_MESSAGE);
+		}
+		enableInterrupts();
+		return -1;
+	}
+	//-3: process has been zap’d 
+	if (isZapped()) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("MboxReceive(): Process was zapped while sending.\n");
+		}
+		enableInterrupts();
+		return -3;
+	}
+
+	/*TP
+	If the mail box specified has not created
+	return -1
+	*/
+	if (aBox->mboxID == -1) {
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): Inactive mail box. boxPID:%\n", mailboxID%MAXMBOX);
+		}
+		enableInterrupts();
+		return -1;
+	}
+
+	/*TP
+	Case1:  If there is no message in the mailbox, the calling process is blocked until a message has
+	been received.
+	*/
+	if (aBox->numMessages == 0) {
+		if (DEBUG2 && debugflag2)
+			USLOSS_Console("boxCondSend(): returning -2\n");
+		enableInterrupts();
+		return -2;
+	}
+	else { // There is available message in the mailbox  
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("-> MboxReceive(): There is available message. Calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
+		}
+
+		// extra checking 
+		if (aBox->slots == NULL) {
+			//if (DEBUG2 && debugflag2) {
+			USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			//}
+		}
+
+		// return the first message in the slot 
+		slotPtr aSlotPtr = aBox->slots;
+
+		// Check for empty slot
+		if (aSlotPtr->status == SLOTEMPTY) {
+			//if (DEBUG2 && debugflag2) {
+			USLOSS_Console("->-> MboxReceive(): try to send an empty SLOT. Calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+			//}
+			enableInterrupts();
+			return -1;
+		}
+
+		// Copy information from the slot to *message argument
+		memcpy(message, aSlotPtr->message, aSlotPtr->msgSize);
+
+		// store messageSize for return value 
+		int result = aSlotPtr->msgSize;
+
+		// Remove the slot from current mailbox`s slots list
+		aBox->slots = aSlotPtr->nextSlot;
+
+
+		// Free the slot in MailSlotTable  
+		aSlotPtr->mboxID = -1;
+		aSlotPtr->msgSize = -1;
+		aSlotPtr->status = SLOTEMPTY;
+		aSlotPtr->nextSlot = NULL;
+
+		// update numMessage of the current mailbox 
+		aBox->numMessages = aBox->numMessages - 1;
+		filledSlots = filledSlots - 1;
+
+		/*
+		After the slot above has been free
+		If there is blocked send mail box process not added to
+		the slots list due to it is full.
+		- Take that process off the blocked send list
+		- Use it and the mail slot just free to create new mail slot
+		and add that slot to the END the slots list.
+		- No need to update on MailSlotTable.
+		because we reuse free slot above so the information of
+		the new created slot will be auto updated in the MailSlotTable[]
+		- update numMessage of the current mailbox and filledSlots
+		- unblock the process called send
+		*/
+		if (aBox->blockedSendPrt != NULL) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("->-> MboxReceive(): Adding bocked send message to Slots @ Mail box ID: %d. \n", aBox->mboxID);
+			}
+			// some extra checking 
+			if (aBox->numMessages != aBox->totalSlots - 1) { // -1 due to the remove slot above 
+				USLOSS_Console("->-> MboxReceive(): ERROR: Adding bock send to Slots @ Mail box ID: %d. \n", aBox->mboxID);
+				USLOSS_Console("->-> MboxReceive(): But NumMessage: %d != Max number of slots allowed: %d\n", aBox->numMessages, aBox->totalSlots);
+			}
+
+			mboxProcPtr aBlockedSendMsg = aBox->blockedSendPrt;
+			aBox->blockedSendPrt = aBlockedSendMsg->nextMboxProc;
+
+			// some debug outputs 
+			if (aBox->blockedSendPrt == NULL) {
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("->-> MboxReceive(): ERROR: blockedSentPtr is NULL2 Mail box ID: %d. \n", aBlockedSendMsg->nextMboxProc, aBox->mboxID);
+				}
+			}
+
+			aSlotPtr->mboxID = mailboxID;
+			aSlotPtr->status = SLOTFULL;
+			aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
+			memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
+			if (aBox->slots == NULL) {
+				aBox->slots = aSlotPtr;
+			}
+			else {
+				slotPtr temp = aBox->slots;
+				while (temp->nextSlot != NULL) {
+					temp = temp->nextSlot;
+				}
+				temp->nextSlot = aSlotPtr;
+			}
+
+
+			aBox->numMessages++;
+			filledSlots++;
+
+			unblockProc(aBlockedSendMsg->processPID);
+		}
+
+		// return msg size
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("->-> MboxReceive(): Return messageSize without calling block me at mail box ID: %d\n", aBox->mboxID);
+		}
+		enableInterrupts();
+		return result;
+	} // end Case1
+
+	if (DEBUG2 && debugflag2) {
+		USLOSS_Console("-> MboxReceive(): FIXME: we should not see this message! process PID: %d. Mail box ID: %d\n", getpid(), aBox->mboxID);
+	}
+
+	return -99; // get away from the warning
+				// memcpy(message, MailBoxTable[mailboxID % MAXMBOX].slots->message, msg_size);
+				// return MailBoxTable[mailboxID % MAXMBOX].slots->msgSize;
+}
 
 /* ------------------------------------------------------------------------
    Name - check_io
