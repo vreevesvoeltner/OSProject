@@ -13,6 +13,7 @@ struct mailbox {
     int       numMessages; //Number of messages (slots in use) in this mailbox
     int       totalSlots; //Max number of slots in this box
     int       slotSize; //Max size of the slots
+    int       status;
     slotPtr   slots; //pointer to the first slot in this mailbox
     // other items as needed...
 	//-----TP----------
@@ -58,6 +59,9 @@ struct mboxProc {
 
 #define SLOTEMPTY 0
 #define SLOTFULL 1
+
+#define MBOX_OPEN 0
+#define MBOX_RELEASING 1
 //----------TP--------//
 #define EMPTY_BOX 15 // There is no message in the current mail box
 #define FULL_BOX  16 // The current mail box is out of slots to use  
