@@ -38,6 +38,7 @@ void enableInterrupts();
 /* -------------------------- Globals ------------------------------------- */
 
 int debugflag2 = 0;
+int debugflagRelease = 0;
 
 // the mail boxes 
 mailbox MailBoxTable[MAXMBOX];
@@ -329,6 +330,119 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 	enableInterrupts();
     return 0;
 } /* MboxSend */
+
+  /* ------------------------------------------------------------------------
+  Name - MboxRelease
+  Purpose - Releases a previously created mailbox. 
+	Any process can release any mailbox.
+	The code for MboxRelease will need to devise a means of handling processes that are
+	blocked on a mailbox being released. Essentially, each blocked process should return -3
+	from the send or receive that caused it to block. The process that called MboxRelease
+	needs to unblock all the blocked processes. When each of these processes awake from the
+	blockMe call inside send or receive, it will need to “notice” that the mailbox has been
+	released…
+  Parameters - ID of the mailbox to release
+  Returns:	  -3: process has been zap’d.
+			  -1: the mailboxID is not a mailbox that is in use.
+			   0: successful completion.
+  ----------------------------------------------------------------------- */
+int MboxRelease(int mailboxID) {
+	// Make sure in Kernel mode
+	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
+		USLOSS_Halt(1);
+	}
+	disableInterrupts();
+
+	//Check caller is zapped 
+	if (isZapped()) {
+		if (DEBUG2 && debugflagRelease) {
+			USLOSS_Console("MboxRelease(): Given mailbox has been ZAPPED.\n");
+		}
+		return -3;
+	}
+
+	//Check if mailbox has been released
+	if (MailBoxTable[mailboxID % MAXMBOX].mboxID == -1) {
+		if (DEBUG2 && debugflagRelease) {
+			USLOSS_Console("MboxRelease(): Given mailbox has been released.\n");
+		}
+		return -1;
+	}
+
+	// Find the mailbox 
+	mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
+	
+	// some extra checking
+	if (target == NULL) {
+		if (DEBUG2 && debugflagRelease) {
+			USLOSS_Console("-> MboxRelease(): target is NULL at boxID %d\n", target->mboxID);
+		}
+		return -1;
+	}
+
+	// Unblock on all the processes being blocked by send and receive 
+	// unblock Receive 
+	mboxProcPtr waitingReceiver;
+	while (target->blockedReceivePrt != NULL) {
+		// get the waiting receiver
+		waitingReceiver = target->blockedReceivePrt;
+
+		// remove and reset pointer in waiting receiver
+		target->blockedReceivePrt = waitingReceiver->nextMboxProc;
+		waitingReceiver->nextMboxProc = NULL;
+
+		if (DEBUG2 && debugflagRelease) {
+			USLOSS_Console("-> MboxRelease():Did removed processID %d at boxID %d\n", waitingReceiver->processPID, target->mboxID);
+		}
+
+		// unblocked the calling receiver`s process 
+		unblockProc(waitingReceiver->processPID);
+		disableInterrupts();
+	}
+
+	// Unblocked Send
+	mboxProcPtr waitingSend;
+	while (target->blockedSendPrt != NULL) {
+		// get the waiting receiver
+		waitingSend = target->blockedSendPrt;
+
+		// remove and reset pointer in waiting receiver
+		target->blockedSendPrt = waitingSend->nextMboxProc;
+		waitingSend->nextMboxProc = NULL;
+
+		if (DEBUG2 && debugflagRelease) {
+			USLOSS_Console("-> MboxRelease():Did removed processID %d at boxID %d\n", waitingReceiver->processPID, target->mboxID);
+		}
+
+		// unblocked the calling receiver`s process 
+		unblockProc(waitingSend->processPID);
+		disableInterrupts();
+	}
+
+
+	// delete all the slot
+	while (target->slots !=NULL){
+		initMailSlot(target->slots);
+		target->numMessages = target->numMessages - 1;
+		if (target->numMessages) {
+			USLOSS_Console("-> MboxRelease():ERROR number of mail slot in use is %d, at boxID %d\n", target->numMessages, target->mboxID);
+		}
+		target->slots = target->slots->nextSlot;
+	}
+
+	// delete the mailbox
+	if (DEBUG2 && debugflagRelease) {
+		USLOSS_Console("-> MboxRelease():Did removed boxID %d\n", target->mboxID);
+	}
+	initMailBox(target);
+
+	// decreasing total number of mail boxes
+	numMailBoxes--;
+	enableInterrupts(); 
+	return 0;
+
+}
 
 
 /* ------------------------------------------------------------------------
