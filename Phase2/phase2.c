@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-   phase2.c 
+   phase2.c v2
    Students: 
    Veronica Reeves
    Thai Pham
