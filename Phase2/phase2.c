@@ -211,7 +211,6 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 		add new message to the mailbox slots 
 		and wait for receiver
 	*/
-
 	if (target->blockedReceivePrt != NULL) {
 
 		if (DEBUG2 && debugflag2) {
@@ -282,12 +281,13 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 			// block the process calling send
 			blockMe(FULL_BOX);
 			disableInterrupts();
-
 			//Check if process was zapped
 			if (isZapped()) {
 				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+				enableInterrupts();
 				return -3;
 			}
+			
 		}
 		else {//Add message to mailbox
 			if (DEBUG2 && debugflag2) {
@@ -425,7 +425,7 @@ int MboxRelease(int mailboxID) {
 	while (target->slots !=NULL){
 		initMailSlot(target->slots);
 		target->numMessages = target->numMessages - 1;
-		if (target->numMessages) {
+		if (target->numMessages < 0) {
 			USLOSS_Console("-> MboxRelease():ERROR number of mail slot in use is %d, at boxID %d\n", target->numMessages, target->mboxID);
 		}
 		target->slots = target->slots->nextSlot;
@@ -532,13 +532,14 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			// block the calling process 
 			blockMe(EMPTY_BOX);
 			disableInterrupts();
-			
+
 			//Check if process was zapped
 			if (isZapped()) {
 				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+				enableInterrupts();
 				return -3;
 			}
-
+			
 			// return message size
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("->-> MboxReceive(): Return msg_size after blockme() at mail box ID: %d\n", aBox->mboxID);
