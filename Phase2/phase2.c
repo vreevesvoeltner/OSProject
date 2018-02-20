@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-   phase2.c v2
+   phase2.c L
    Students: 
    Veronica Reeves
    Thai Pham
@@ -163,6 +163,7 @@ int MboxCreate(int slots, int slot_size)
     return mbox->mboxID;
 } /* MboxCreate */
 
+
 /* ------------------------------------------------------------------------
    Name - MboxSend
    Purpose - Put a message into a slot for the indicated mailbox.
@@ -194,7 +195,7 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
     
     mailbox *target = &MailBoxTable[mbox_id % MAXMBOX];
     slotPtr temp,
-            newSlot;
+            newSlot; 
     
     //Check if arguments are valid
     if (mbox_id < 0 || msg_size < 0 || msg_size > target->slotSize){
@@ -244,8 +245,6 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 		After block sender, add new message to block sender list
 		*/
 		
-		
-
 		if (target->numMessages == target->totalSlots) {
 			if (DEBUG2 && debugflag2) {
 				USLOSS_Console("-> MboxSend():Slots at boxID: %d is FULL.\n", target->mboxID);
@@ -278,12 +277,21 @@ int MboxSend(int mbox_id, void *msg_ptr, int msg_size)
 				}
 			}
 
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("-> MboxSend():Slots at boxID: %d is FULL. Process calling %d is blocked\n", target->mboxID, getpid());
+			}
 			// block the process calling send
 			blockMe(FULL_BOX);
 			disableInterrupts();
-			//Check if process was zapped
-			if (isZapped()) {
-				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("-> MboxSend():After interrupt before ZAP. Slots at boxID: %d is FULL. Process calling %d. isZapped()%d\n", target->mboxID, getpid(), isZapped());
+			}
+			//-3: process has been zap’d or the mailbox released while the process was blocked on the mailbox.
+			if (isZapped() || target->mboxID == -1) {
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+				}
 				enableInterrupts();
 				return -3;
 			}
@@ -533,9 +541,11 @@ int MboxReceive(int mbox_id, void *msg_ptr, int msg_size)
 			blockMe(EMPTY_BOX);
 			disableInterrupts();
 
-			//Check if process was zapped
-			if (isZapped()) {
-				USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+			//-3: process has been zap’d or the mailbox released while the process was blocked on the mailbox.
+			if (isZapped() || aBox->mboxID == -1) {
+				if (DEBUG2 && debugflag2) {
+					USLOSS_Console("MboxReceive(): Process was zapped while sending.\n");
+				}
 				enableInterrupts();
 				return -3;
 			}
