@@ -160,7 +160,7 @@ int MboxCreate(int slots, int slot_size)
         nextMboxID++;
     }
     
-    mbox->mboxID = nextMboxID - 1; // FIXME: need do a % operation 
+    mbox->mboxID = (nextMboxID - 1) % MAXMBOX; // FIXME: need do a % operation 
     mbox->totalSlots = slots;
     mbox->slotSize = slot_size;
     mbox->status = MBOX_OPEN;
