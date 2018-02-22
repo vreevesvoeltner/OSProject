@@ -18,3 +18,10 @@ XXp2(): after receipt of message #1, result = 16
 
 start2(): joined with kid 5, status = -4
 All processes completed.
+
+
+
+
+
+
+
