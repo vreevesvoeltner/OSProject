@@ -1055,6 +1055,7 @@ int check_io(void)
     return interruptBlocked > 0;
 } /* check_io */
 
+
 /* ------------------------------------------------------------------------
    Initializing MailBox and MailSlot struct. 
    ------------------------------------------------------------------------ */
