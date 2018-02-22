@@ -198,7 +198,8 @@ int MboxSend(int mailboxID, void *message, int messageSize)
     mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
     //Check if mailbox has been released
     if (target->status == MBOX_RELEASED){
-        USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
+        if (DEBUG2 && debugflag2)
+            USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
         return -3;
     }
 
@@ -267,7 +268,6 @@ int MboxSend(int mailboxID, void *message, int messageSize)
             aBoxProc.msgSize = messageSize;
             aBoxProc.msgPtr = message;
             aBoxProc.nextMboxProc = NULL;
-
             // Adding the new mail box process to the end of block send list to wait for receiver 
             if (target->blockedSendPrt == NULL) {
                 target->blockedSendPrt = &aBoxProc;
@@ -510,7 +510,7 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
     Case1:  If there is no message in the mailbox, the calling process is blocked until a message has
     been received.
     */
-    if (aBox->numMessages == 0) {
+    if (aBox->numMessages == 0 && aBox->blockedSendPrt == NULL) {
         if (DEBUG2 && debugflag2) {
             USLOSS_Console("-> MboxReceive(): empty mail box.Blocking calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
         }
@@ -571,9 +571,9 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
 
         // extra checking 
         if (aBox->slots == NULL) {
-            //if (DEBUG2 && debugflag2) {
+            if (DEBUG2 && debugflag2) {
                 USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-            //}
+            }
         }
 
         // return the first message in the slot 
@@ -581,9 +581,9 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
 
         // Check for empty slot
         if (aSlotPtr->status == SLOTEMPTY) {
-            //if (DEBUG2 && debugflag2) {
+            if (DEBUG2 && debugflag2) {
                 USLOSS_Console("->-> MboxReceive(): try to send an empty SLOT. Calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-            //}
+            }
             enableInterrupts(); 
             return -1;
         }
@@ -711,8 +711,9 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
     mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
     //Check if mailbox has been released
     if (target->status == MBOX_RELEASED) {
-        USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
-        return -3;
+        if (DEBUG2 && debugflag2)
+            USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
+        return -1;
     }
 
 
