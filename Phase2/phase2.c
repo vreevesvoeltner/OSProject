@@ -568,98 +568,107 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
         if (DEBUG2 && debugflag2) {
             USLOSS_Console("-> MboxReceive(): There is available message. Calling process PID %d. Number of slots in use in current mail box: %d\n", getpid(), aBox->numMessages);
         }
-
+        int result = -1;
+        if (aBox->numMessages > 0){
         // extra checking 
-        if (aBox->slots == NULL) {
-            if (DEBUG2 && debugflag2) {
-                USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-            }
-        }
-
-        // return the first message in the slot 
-        slotPtr aSlotPtr = aBox->slots;
-
-        // Check for empty slot
-        if (aSlotPtr->status == SLOTEMPTY) {
-            if (DEBUG2 && debugflag2) {
-                USLOSS_Console("->-> MboxReceive(): try to send an empty SLOT. Calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
-            }
-            enableInterrupts(); 
-            return -1;
-        }
-
-        // Copy information from the slot to *message argument
-        memcpy(message, aSlotPtr->message, aSlotPtr->msgSize);
-
-        // store messageSize for return value 
-        int result = aSlotPtr->msgSize;
-
-        // Remove the slot from current mailbox`s slots list
-        aBox->slots = aSlotPtr->nextSlot;
-        
-
-        // Free the slot in MailSlotTable  
-        aSlotPtr->mboxID   = -1;
-        aSlotPtr->msgSize  = -1;
-        aSlotPtr->status   = SLOTEMPTY;
-        aSlotPtr->nextSlot = NULL;
-        
-        // update numMessage of the current mailbox 
-        aBox->numMessages = aBox->numMessages - 1;
-        filledSlots       = filledSlots - 1;
-
-        /*
-        After the slot above has been free
-        If there is blocked send mail box process not added to 
-        the slots list due to it is full.
-        - Take that process off the blocked send list
-        - Use it and the mail slot just free to create new mail slot 
-        and add that slot to the END the slots list.
-        - No need to update on MailSlotTable. 
-        because we reuse free slot above so the information of 
-        the new created slot will be auto updated in the MailSlotTable[]
-        - update numMessage of the current mailbox and filledSlots 
-        - unblock the process called send
-        */
-        if (aBox->blockedSendPrt != NULL) {
-            if (DEBUG2 && debugflag2) {
-                USLOSS_Console("->-> MboxReceive(): Adding bocked send message to Slots @ Mail box ID: %d. \n", aBox->mboxID);
-            }
-            // some extra checking 
-            if (aBox->numMessages != aBox->totalSlots -1) { // -1 due to the remove slot above 
-                USLOSS_Console("->-> MboxReceive(): ERROR: Adding bock send to Slots @ Mail box ID: %d. \n", aBox->mboxID);
-                USLOSS_Console("->-> MboxReceive(): But NumMessage: %d != Max number of slots allowed: %d\n", aBox->numMessages, aBox->totalSlots);
+            if (aBox->slots == NULL) {
+                if (DEBUG2 && debugflag2) {
+                    USLOSS_Console("->-> MboxReceive(): There is no slot created but messages in use != 0.Blocking calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+                }
             }
 
+            // return the first message in the slot 
+            slotPtr aSlotPtr = aBox->slots;
+
+            // Check for empty slot
+            if (aSlotPtr->status == SLOTEMPTY) {
+                if (DEBUG2 && debugflag2) {
+                    USLOSS_Console("->-> MboxReceive(): try to send an empty SLOT. Calling process PID %d. Mail box ID: %d. \n", getpid(), aBox->mboxID);
+                }
+                enableInterrupts(); 
+                return -1;
+            }
+
+            // Copy information from the slot to *message argument
+            memcpy(message, aSlotPtr->message, aSlotPtr->msgSize);
+
+            // store messageSize for return value 
+            result = aSlotPtr->msgSize;
+
+            // Remove the slot from current mailbox`s slots list
+            aBox->slots = aSlotPtr->nextSlot;
+            
+
+            // Free the slot in MailSlotTable  
+            aSlotPtr->mboxID   = -1;
+            aSlotPtr->msgSize  = -1;
+            aSlotPtr->status   = SLOTEMPTY;
+            aSlotPtr->nextSlot = NULL;
+            
+            // update numMessage of the current mailbox 
+            aBox->numMessages = aBox->numMessages - 1;
+            filledSlots       = filledSlots - 1;
+
+            /*
+            After the slot above has been free
+            If there is blocked send mail box process not added to 
+            the slots list due to it is full.
+            - Take that process off the blocked send list
+            - Use it and the mail slot just free to create new mail slot 
+            and add that slot to the END the slots list.
+            - No need to update on MailSlotTable. 
+            because we reuse free slot above so the information of 
+            the new created slot will be auto updated in the MailSlotTable[]
+            - update numMessage of the current mailbox and filledSlots 
+            - unblock the process called send
+            */
+            if (aBox->blockedSendPrt != NULL) {
+                if (DEBUG2 && debugflag2) {
+                    USLOSS_Console("->-> MboxReceive(): Adding bocked send message to Slots @ Mail box ID: %d. \n", aBox->mboxID);
+                }
+                // some extra checking 
+                if (aBox->numMessages != aBox->totalSlots -1) { // -1 due to the remove slot above 
+                    USLOSS_Console("->-> MboxReceive(): ERROR: Adding bock send to Slots @ Mail box ID: %d. \n", aBox->mboxID);
+                    USLOSS_Console("->-> MboxReceive(): But NumMessage: %d != Max number of slots allowed: %d\n", aBox->numMessages, aBox->totalSlots);
+                }
+
+                mboxProcPtr aBlockedSendMsg = aBox->blockedSendPrt;
+                aBox->blockedSendPrt = aBlockedSendMsg->nextMboxProc;
+
+                // some debug outputs 
+                if (aBox->blockedSendPrt == NULL) {
+                    if (DEBUG2 && debugflag2) {
+                        USLOSS_Console("->-> MboxReceive(): ERROR: blockedSentPtr is NULL2 Mail box ID: %d. \n", aBlockedSendMsg->nextMboxProc, aBox->mboxID);
+                    }
+                }
+                
+                aSlotPtr->mboxID = mailboxID;
+                aSlotPtr->status = SLOTFULL;
+                aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
+                memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
+                if (aBox->slots == NULL) {
+                    aBox->slots = aSlotPtr;
+                }
+                else {
+                    slotPtr temp = aBox->slots;
+                    while (temp->nextSlot != NULL) {
+                        temp = temp->nextSlot;
+                    }
+                    temp->nextSlot = aSlotPtr;
+                }
+                
+
+                aBox->numMessages++;
+                filledSlots++;
+
+                unblockProc(aBlockedSendMsg->processPID);
+            }
+        }else{
             mboxProcPtr aBlockedSendMsg = aBox->blockedSendPrt;
             aBox->blockedSendPrt = aBlockedSendMsg->nextMboxProc;
-
-            // some debug outputs 
-            if (aBox->blockedSendPrt == NULL) {
-                if (DEBUG2 && debugflag2) {
-                    USLOSS_Console("->-> MboxReceive(): ERROR: blockedSentPtr is NULL2 Mail box ID: %d. \n", aBlockedSendMsg->nextMboxProc, aBox->mboxID);
-                }
-            }
             
-            aSlotPtr->mboxID = mailboxID;
-            aSlotPtr->status = SLOTFULL;
-            aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
-            memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
-            if (aBox->slots == NULL) {
-                aBox->slots = aSlotPtr;
-            }
-            else {
-                slotPtr temp = aBox->slots;
-                while (temp->nextSlot != NULL) {
-                    temp = temp->nextSlot;
-                }
-                temp->nextSlot = aSlotPtr;
-            }
-            
-
-            aBox->numMessages++;
-            filledSlots++;
-
+            result = aBlockedSendMsg->msgSize;
+            memcpy(message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
             unblockProc(aBlockedSendMsg->processPID);
         }
                 
