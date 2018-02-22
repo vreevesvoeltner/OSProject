@@ -1,8 +1,7 @@
 #!/bin/bash
 
-test01 > t1.out
 
-for i in `seq 0 10`;
+for i in `seq 0 13`;
 do 
 	if [ "$i" -lt 10 ] 
 	then 
