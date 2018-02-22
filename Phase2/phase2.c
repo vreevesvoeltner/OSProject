@@ -144,12 +144,16 @@ int MboxCreate(int slots, int slot_size)
 
     // check if there are any open mailboxes
     if (numMailBoxes == MAXMBOX){
-        //USLOSS_Console("MboxCreate(): no open mailboxes.");
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("MboxCreate(): no open mailboxes.");
+		}
         return -1;
     }
     // check if parameters are valid
     if (slots > MAXSLOTS || slots < 0 || slot_size > MAX_MESSAGE || slot_size < 0){
-        USLOSS_Console("MboxCreate(): Invalid arguments given.\n");
+		if (DEBUG2 && debugflag2) {
+			USLOSS_Console("MboxCreate(): Invalid arguments given.\n");
+		}
         return -1;
     }
     
