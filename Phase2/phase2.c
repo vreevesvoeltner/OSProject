@@ -157,6 +157,7 @@ int MboxCreate(int slots, int slot_size)
     mbox->mboxID = nextMboxID - 1; // FIXME: need do a % operation 
     mbox->totalSlots = slots;
     mbox->slotSize = slot_size;
+    mbox->status = MBOX_OPEN;
   
     numMailBoxes++;
 
@@ -187,14 +188,14 @@ int MboxSend(int mailboxID, void *message, int messageSize)
         USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
         USLOSS_Halt(1);
     }
-    
+        
+    mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
 	//Check if mailbox has been released
-    if (MailBoxTable[mailboxID % MAXMBOX].mboxID == -1){
+    if (target->status == MBOX_RELEASED){
         USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
         return -3;
     }
-    
-    mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
+
     slotPtr temp,
             newSlot; 
     
@@ -289,9 +290,9 @@ int MboxSend(int mailboxID, void *message, int messageSize)
 				USLOSS_Console("-> MboxSend():After interrupt before ZAP. Slots at boxID: %d is FULL. Process calling %d. isZapped()%d\n", target->mboxID, getpid(), isZapped());
 			}
 			//-3: process has been zap’d or the mailbox released while the process was blocked on the mailbox.
-			if (isZapped() || target->mboxID == -1) {
+			if (isZapped() || target->status == MBOX_RELEASED) {
 				if (DEBUG2 && debugflag2) {
-					USLOSS_Console("MboxSend(): Process was zapped while sending.\n");
+					USLOSS_Console("MboxSend(): Process was zapped or mailbox was released while sending.\n");
 				}
 				enableInterrupts();
 				return -3;
@@ -381,6 +382,7 @@ int MboxRelease(int mailboxID) {
 
 	// Find the mailbox 
 	mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
+    target->status = MBOX_RELEASED;
 	
 	// some extra checking
 	if (target == NULL) {
@@ -540,7 +542,7 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
 			disableInterrupts();
 
 			//-3: process has been zap’d or the mailbox released while the process was blocked on the mailbox.
-			if (isZapped() || aBox->mboxID == -1) {
+			if (isZapped() || aBox->status == MBOX_RELEASED) {
 				if (DEBUG2 && debugflag2) {
 					USLOSS_Console("MboxReceive(): Process was zapped while sending.\n");
 				}
@@ -698,14 +700,14 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
 		USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
 		USLOSS_Halt(1);
 	}
-
+	mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
 	//Check if mailbox has been released
-	if (MailBoxTable[mailboxID % MAXMBOX].mboxID == -1) {
+	if (target->status == MBOX_RELEASED) {
 		USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
 		return -3;
 	}
 
-	mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
+
 	slotPtr temp,
 		newSlot;
 
@@ -1021,6 +1023,7 @@ void initMailBox(mailbox *m){
     m->slotSize = 0;
     m->slots = NULL;
 	m->blockedReceivePrt = NULL;
+    m->status = MBOX_RELEASED;
 }
 
 void initMailSlot(slotPtr s){
