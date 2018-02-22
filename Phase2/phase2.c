@@ -704,6 +704,7 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
 
     //Check if there are available slots in the SlotTable[] 
     if (filledSlots == MAXSLOTS) {
+	return -2;
         USLOSS_Console("MboxSend(): Maximum slots reached. Halting...\n");
         USLOSS_Halt(1);
     }
