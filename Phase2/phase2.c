@@ -538,7 +538,7 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
                 while (temp->nextMboxProc != NULL){
                     temp = temp->nextMboxProc;
                 }
-                temp = &aBoxProc;
+                temp->nextMboxProc = &aBoxProc;
                 if (DEBUG2 && debugflag2) {
                     USLOSS_Console("->-> MboxReceive():  New mail process successful added. Mail box ID: %d\n", aBox->mboxID);
                 }
