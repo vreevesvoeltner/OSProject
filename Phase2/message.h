@@ -48,14 +48,13 @@ union psrValues {
 /* ------------------------------------------------------------------------
 Store information of the process and message that are blocked by "send" or 
 "receive" 
------------------------------------------------------------------------- */
+------------------------------------------------------------------------*/
 struct mboxProc {
 	int          processPID;// current process ID that calls "receive" or "send" 
 	int          msgSize;
 	void        *msgPtr; // received message
 	mboxProcPtr  nextMboxProc;
 };
-
 
 #define SLOTEMPTY 0
 #define SLOTFULL 1
@@ -65,3 +64,11 @@ struct mboxProc {
 //----------TP--------//
 #define EMPTY_BOX 15 // There is no message in the current mail box
 #define FULL_BOX  16 // The current mail box is out of slots to use  
+
+#define CLOCK_MBOX 0
+#define DISK_MBOX 1
+#define TERMINAL_MBOX 3
+
+extern void enableInterrupts();
+
+extern void disableInterrupts();
