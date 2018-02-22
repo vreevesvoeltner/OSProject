@@ -207,7 +207,8 @@ int MboxSend(int mailboxID, void *message, int messageSize)
     
     //Check if arguments are valid
     if (mailboxID < 0 || messageSize < 0 || messageSize > target->slotSize){
-        USLOSS_Console("MboxSend(): Invalid argument given.\n");
+	if (DEBUG2 && debugflag2)
+            USLOSS_Console("MboxSend(): Invalid argument given.\n");
         return -1;
     }
     
@@ -1025,12 +1026,11 @@ int waitDevice(int type, int unit, int *status){
             USLOSS_Halt(1);
     }
     interruptBlocked++;
-    
+    enableInterrupts();
     MboxReceive(x, status, sizeof(int));
     
     interruptBlocked--;
-    
-    enableInterrupts();
+
     
     if (isZapped()){
         return -1;
@@ -1054,7 +1054,6 @@ int check_io(void)
         USLOSS_Console("check_io(): called\n");
     return interruptBlocked > 0;
 } /* check_io */
-
 
 /* ------------------------------------------------------------------------
    Initializing MailBox and MailSlot struct. 
