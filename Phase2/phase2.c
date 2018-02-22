@@ -197,10 +197,10 @@ int MboxSend(int mailboxID, void *message, int messageSize)
         
     mailbox *target = &MailBoxTable[mailboxID % MAXMBOX];
     //Check if mailbox has been released
-    if (target->status == MBOX_RELEASED){
+    if (target->status == MBOX_RELEASED || target->mboxID == -1){
         if (DEBUG2 && debugflag2)
             USLOSS_Console("MboxSend(): Given mailbox has been released.\n");
-        return -3;
+        return -1;
     }
 
     slotPtr temp,
@@ -498,7 +498,7 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
     If the mail box specified has not created 
     return -1
     */
-    if (aBox->mboxID == -1) { 
+    if (aBox->mboxID == -1 || aBox->status == MBOX_RELEASED) {
         if (DEBUG2 && debugflag2) {
             USLOSS_Console("-> MboxReceive(): Inactive mail box. boxPID:%\n", mailboxID%MAXMBOX);
         }
