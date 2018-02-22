@@ -1,17 +1,16 @@
 #!/bin/bash
+make clean 
 
-test01 > t1.out
-
-for i in `seq 0 10`;
+for i in `seq 0 20`;
 do 
 	if [ "$i" -lt 10 ] 
 	then 
 		make test0$i
 		test0$i > t0$i.out  # store outputs to a file
-		diff t0$i.out ./testResults/test0$i.txt > diff0$i.out
+		diff -y t0$i.out ./testResults/test0$i.txt > diff0$i.out
 	else
 		make test$i
 		test$i > t$i.out
-		diff t$i.out ./testResults/test$i.txt > diff$i.out
+		diff -y t$i.out ./testResults/test$i.txt > diff$i.out
 	fi
 done 
