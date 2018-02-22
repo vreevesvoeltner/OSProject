@@ -835,7 +835,7 @@ int MboxCondReceive(int mailboxID, void *message, int maxMessageSize) {
 	disableInterrupts();
 	// variables needed .TP
 	mailbox *aBox = &MailBoxTable[mailboxID%MAXMBOX]; // location of the current mail box 
-	mboxProc aBoxProc; // new mail box process which is in blocked list 
+	//mboxProc aBoxProc; // new mail box process which is in blocked list 
 
 					   /* TP
 					   -1: illegal values given as arguments; or, message being
@@ -1042,13 +1042,21 @@ Side Effects -
 ----------------------------------------------------------------------- */
 void disableInterrupts()
 {
-	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+	int gt = USLOSS_PsrGet();
+	if ((USLOSS_PSR_CURRENT_MODE & gt) == 0) {
 		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
 	else {
-		USLOSS_PsrSet(USLOSS_PsrGet() ^ (USLOSS_PsrGet() & 0x2));
+		int result = USLOSS_PsrSet(gt ^ (gt & 0x2));
+		if (result > gt) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("get way from warning unused variable\n");
+			}
+		}
 	}
+	
+	
 } /* disableInterrupts */
 
   /* ------------------------------------------------------------------------
@@ -1061,12 +1069,18 @@ void disableInterrupts()
   ----------------------------------------------------------------------- */
 void enableInterrupts()
 {
-	if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+	int gt = USLOSS_PsrGet();
+	if ((USLOSS_PSR_CURRENT_MODE & gt) == 0) {
 		USLOSS_Console("disableInterrupts: in user mode. Halting...\n");
 		USLOSS_Halt(1);
 	}
 	else {
-		USLOSS_PsrSet(USLOSS_PsrGet() | 0x2);
+		int result = USLOSS_PsrSet(gt | 0x2);
+		if (result > gt) {
+			if (DEBUG2 && debugflag2) {
+				USLOSS_Console("get way from warning unused variable\n");
+			}
+		}
 	}
 } /* enableInterrupts */
 /* ------------------------------------------------------------------------
