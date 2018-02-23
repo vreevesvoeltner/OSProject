@@ -24,7 +24,7 @@
 #include <string.h>
 
 #include "phase1.h"
-#include "handler.c"
+
 
 
 /* ------------------------- Prototypes ----------------------------------- */
@@ -150,7 +150,7 @@ int MboxCreate(int slots, int slot_size)
         return -1;
     }
     // check if parameters are valid
-    if (slots > MAXSLOTS || slots < 0 || slot_size > MAX_MESSAGE || slot_size < 0){
+    if (slots < 0 || slot_size > MAX_MESSAGE || slot_size < 0){
 		if (DEBUG2 && debugflag2) {
 			USLOSS_Console("MboxCreate(): Invalid arguments given.\n");
 		}
@@ -235,8 +235,14 @@ int MboxSend(int mailboxID, void *message, int messageSize)
         // get the waiting receiver
         mboxProcPtr waitingReceiver = target->blockedReceivePrt;
 
+        if (waitingReceiver->msgSize < messageSize){
+                waitingReceiver->msgSize = -1;
+                unblockProc(waitingReceiver->processPID);
+                return -1;
+        }
         // send message to waiting receiver 
         waitingReceiver->msgSize = messageSize;
+
         memcpy(waitingReceiver->msgPtr, message, messageSize);
 
         // remove and reset pointer in waiting receiver
@@ -652,6 +658,7 @@ int MboxReceive(int mailboxID, void *message, int maxMessageSize)
                 aSlotPtr->mboxID = mailboxID;
                 aSlotPtr->status = SLOTFULL;
                 aSlotPtr->msgSize = aBlockedSendMsg->msgSize;
+                
                 memcpy(aSlotPtr->message, aBlockedSendMsg->msgPtr, aBlockedSendMsg->msgSize);
                 if (aBox->slots == NULL) {
                     aBox->slots = aSlotPtr;
@@ -738,7 +745,8 @@ int MboxCondSend(int mailboxID, void *message, int messageSize) {
 
     //Check if arguments are valid
     if (mailboxID < 0 || messageSize < 0 || messageSize > target->slotSize) {
-        USLOSS_Console("MboxSend(): Invalid argument given.\n");
+        if (DEBUG2 && debugflag2)
+            USLOSS_Console("MboxSend(): Invalid argument given.\n");
         return -1;
     }
 
