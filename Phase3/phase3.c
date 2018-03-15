@@ -5,8 +5,7 @@
 #include <phase3.h>
 
 
-int
-start2(char *arg)
+int start2(char *arg)
 {
     int pid;
     int status;
@@ -17,6 +16,20 @@ start2(char *arg)
     /*
      * Data structure initialization as needed...
      */
+     for (int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
+        systemCallVec[i] = nullsys3;
+     }
+     
+     systemCallVec[SYS_SPAWN] = spawn;
+     systemCallVec[SYS_WAIT] = wait;
+     systemCallVec[SYS_TERMINATE] = terminate;
+     systemCallVec[SYS_CREATE] = create;
+     systemCallVec[SYS_SEMP] = semP;
+     systemCallVec[SYS_SEMV] = semV;
+     systemCallVec[SYS_SEMFREE] = semFree;
+     systemCallVec[SYS_GETTIMEOFDAY] = getTimeOfDay;
+     systemCallVec[SYS_CPUTIME] = cpuTime;
+     systemCallVec[SYS_GETPID] = getPID ;
 
 
     /*
