@@ -20,16 +20,16 @@ int start2(char *arg)
         systemCallVec[i] = nullsys3;
      }
      
-     systemCallVec[SYS_SPAWN] = spawn;
-     systemCallVec[SYS_WAIT] = wait;
-     systemCallVec[SYS_TERMINATE] = terminate;
-     systemCallVec[SYS_CREATE] = create;
-     systemCallVec[SYS_SEMP] = semP;
-     systemCallVec[SYS_SEMV] = semV;
-     systemCallVec[SYS_SEMFREE] = semFree;
-     systemCallVec[SYS_GETTIMEOFDAY] = getTimeOfDay;
-     systemCallVec[SYS_CPUTIME] = cpuTime;
-     systemCallVec[SYS_GETPID] = getPID ;
+     systemCallVec[SYS_SPAWN] = Spawn;
+     systemCallVec[SYS_WAIT] = Wait;
+     systemCallVec[SYS_TERMINATE] = Terminate;
+     systemCallVec[SYS_CREATE] = SemCreate;
+     systemCallVec[SYS_SEMP] = SemP;
+     systemCallVec[SYS_SEMV] = SemV;
+     systemCallVec[SYS_SEMFREE] = SemFree;
+     systemCallVec[SYS_GETTIMEOFDAY] = GetTimeOfDay;
+     systemCallVec[SYS_CPUTIME] = CpuTime;
+     systemCallVec[SYS_GETPID] = GetPID ;
 
 
     /*
