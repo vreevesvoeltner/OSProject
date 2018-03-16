@@ -119,7 +119,7 @@ int SemCreate(int value, int *semaphore)
     USLOSS_Sysargs sysArg;
     
     CHECKMODE;
-    sysArg.number = SYS_CREATE;
+    sysArg.number = SYS_SEMCREATE;
     sysArg.arg1 = (void*)(long)value;
     
     USLOSS_Syscall(&sysArg);
@@ -143,7 +143,7 @@ int SemP(int semaphore)
     
     CHECKMODE;
     sysArg.number = SYS_SEMP;
-    sysArg.arg1 = (void*)(int)semaphore;
+    sysArg.arg1 = (void*)(long)semaphore;
     
     USLOSS_Syscall(&sysArg);
     
@@ -231,7 +231,7 @@ void CPUTime(int *cpu)
     CHECKMODE;
     sysArg.number = SYS_CPUTIME;
     
-    USLOSS_Syscall(&syscall);
+    USLOSS_Syscall(&sysArg);
     
     *cpu = (int)(long)sysArg.arg4;
 } /* end of CPUTime */

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <usloss.h>
+#include <sems.h>
 
 void
 p1_fork(int pid)

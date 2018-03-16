@@ -3,7 +3,31 @@
 #include <phase1.h>
 #include <phase2.h>
 #include <phase3.h>
+#include <libuser.h>
+#include <sems.h>
 
+void nullsys3(USLOSS_Sysargs *);
+void spawn(USLOSS_Sysargs *);
+int spawnReal(char *, int(*)(char *), char *, int, int);
+int spawnLaunch(char*);
+void wait(USLOSS_Sysargs *);
+int waitReal(int *);
+void terminate(USLOSS_Sysargs *);
+void terminateReal(int);
+void semCreate(USLOSS_Sysargs *);
+int semCreateReal(int);
+void semP(USLOSS_Sysargs *);
+void semPReal(int);
+void semV(USLOSS_Sysargs *);
+void semVReal(int);
+void semFree(USLOSS_Sysargs *);
+int semFreeReal(int); 
+void getTimeOfDay(USLOSS_Sysargs *);
+void cpuTime(USLOSS_Sysargs *);
+void getPID(USLOSS_Sysargs *);
+void setUserMode();
+
+proc3 ProcTable[MAXPROC];
 
 int start2(char *arg)
 {
@@ -16,20 +40,23 @@ int start2(char *arg)
     /*
      * Data structure initialization as needed...
      */
+     for (int i = 0; i < MAXPROC; i++){
+        ProcTable[i].mbox = -1;
+     }
      for (int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
         systemCallVec[i] = nullsys3;
      }
      
-     systemCallVec[SYS_SPAWN] = Spawn;
-     systemCallVec[SYS_WAIT] = Wait;
-     systemCallVec[SYS_TERMINATE] = Terminate;
-     systemCallVec[SYS_CREATE] = SemCreate;
-     systemCallVec[SYS_SEMP] = SemP;
-     systemCallVec[SYS_SEMV] = SemV;
-     systemCallVec[SYS_SEMFREE] = SemFree;
-     systemCallVec[SYS_GETTIMEOFDAY] = GetTimeOfDay;
-     systemCallVec[SYS_CPUTIME] = CpuTime;
-     systemCallVec[SYS_GETPID] = GetPID ;
+     systemCallVec[SYS_SPAWN] = spawn;
+     systemCallVec[SYS_WAIT] = wait;
+     systemCallVec[SYS_TERMINATE] = terminate;
+     systemCallVec[SYS_SEMCREATE] = semCreate;
+     systemCallVec[SYS_SEMP] = semP;
+     systemCallVec[SYS_SEMV] = semV;
+     systemCallVec[SYS_SEMFREE] = semFree;
+     systemCallVec[SYS_GETTIMEOFDAY] = getTimeOfDay;
+     systemCallVec[SYS_CPUTIME] = cpuTime;
+     systemCallVec[SYS_GETPID] = getPID ;
 
 
     /*
@@ -68,6 +95,172 @@ int start2(char *arg)
      * in kernel (not user) mode.
      */
     pid = waitReal(&status);
-
+    return pid;
 } /* start2 */
 
+void nullsys3(USLOSS_Sysargs* sysArgs){
+    USLOSS_Console("nullsys(): Invalid syscall %d. Terminating...\n", sysArgs->number);
+    terminateReal(1);
+}
+
+void spawn(USLOSS_Sysargs* sysArgs){
+    int (*func)(char *) = sysArgs->arg1,
+        stack_size = (int)(long)sysArgs->arg3,
+        priority = (int)(long)sysArgs->arg4,
+        pid;
+    char *arg = sysArgs->arg2,
+         *name = sysArgs->arg5;
+    
+    pid = spawnReal(name, func, arg, stack_size, priority);
+    
+    setUserMode();
+    sysArgs->arg1 = (void*)(long)pid;
+    sysArgs->arg4 = (void*)(long)0;
+}
+
+int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int priority) 
+{
+    int pid;
+    proc3Ptr newProc;
+    
+    pid = fork1(name, spawnLaunch, arg, stack_size, priority);
+    
+    if (pid < 0){
+        return -1;
+    }
+    
+    newProc = &ProcTable[pid % MAXPROC];
+    newProc->pid = pid;
+    newProc->nextProcPtr = NULL;
+    newProc->nextSiblingPtr = NULL;
+    newProc->parentPtr = &ProcTable[getpid() % MAXPROC];
+    newProc->startFunc = func;
+    if (newProc->mbox == -1){
+        newProc->mbox = MboxCreate(0, 0);
+    }
+        
+    
+    if (newProc->parentPtr->childPtr == NULL){
+        newProc->parentPtr->childPtr = newProc;
+    }else{
+        proc3Ptr temp = newProc->parentPtr->childPtr;
+        while (temp->nextSiblingPtr != NULL){
+            temp = temp->nextSiblingPtr;
+        }
+        temp->nextSiblingPtr = newProc;
+    }
+    
+    MboxCondSend(newProc->mbox, 0, 0);
+    
+    return pid;
+}
+
+int spawnLaunch(char *sysArgs){
+    int procSlot = getpid() % MAXPROC,
+        status;
+    
+    if (ProcTable[procSlot].mbox == -1){
+        ProcTable[procSlot].mbox = MboxCreate(0, 0);
+        MboxReceive(ProcTable[procSlot].mbox, 0, 0);
+    }
+    
+    setUserMode();
+    
+    status = ProcTable[procSlot].startFunc(sysArgs);
+    
+    Terminate(status);
+    
+    return 0;
+}
+
+void wait(USLOSS_Sysargs* sysArgs){
+    int status,
+        pid;
+        
+    pid = waitReal(&status);
+    
+    sysArgs->arg1 = (void*)(long)pid;
+    sysArgs->arg2 = (void*)(long)status;
+    
+    setUserMode();
+}
+
+int waitReal(int* status){
+    return join(status);
+}
+
+void terminate(USLOSS_Sysargs* sysArgs){
+    terminateReal((int)(long)sysArgs->arg1);
+    setUserMode();
+}
+
+void terminateReal(int status){
+    proc3Ptr current = &ProcTable[getpid() % MAXPROC],
+             temp = current->childPtr;
+    while (temp != NULL) {
+        current->childPtr = temp->nextSiblingPtr;
+        zap(temp->pid);
+        temp = current->childPtr;
+    }
+    
+    if (current->parentPtr != NULL){
+        temp = current->parentPtr->childPtr;
+        if (temp == current){
+            current->parentPtr->childPtr = current->nextSiblingPtr;
+        }else{
+            while (temp->nextSiblingPtr != current){
+                temp = temp->nextSiblingPtr;
+            }
+            temp->nextSiblingPtr = current->nextSiblingPtr;
+        }
+    }
+    
+    quit(status);
+}
+
+void semCreate(USLOSS_Sysargs* sysArgs){
+
+}
+
+int semCreateReal(int id){
+    return -1;
+}
+
+void semP(USLOSS_Sysargs* sysArgs){
+
+}
+
+void semPReal(int id){
+
+}
+
+void semV(USLOSS_Sysargs* sysArgs){
+
+}
+
+void semVReal(int id){
+
+}
+
+void semFree(USLOSS_Sysargs* sysArgs){
+
+}
+
+int semFreeReal(int id){
+    return -1;
+}
+void getTimeOfDay(USLOSS_Sysargs* sysArgs){
+
+}
+
+void cpuTime(USLOSS_Sysargs* sysArgs){
+
+}
+
+void getPID(USLOSS_Sysargs* sysArgs){
+
+}
+
+void setUserMode(){
+    int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
+}
