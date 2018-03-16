@@ -26,8 +26,15 @@ void getTimeOfDay(USLOSS_Sysargs *);
 void cpuTime(USLOSS_Sysargs *);
 void getPID(USLOSS_Sysargs *);
 void setUserMode();
+void initSem(int);
 
 proc3 ProcTable[MAXPROC];
+
+int semCount;
+
+int nextSem;
+
+mySem SemTable[MAXSEMS];
 
 int start2(char *arg)
 {
@@ -43,6 +50,15 @@ int start2(char *arg)
      for (int i = 0; i < MAXPROC; i++){
         ProcTable[i].mbox = -1;
      }
+     
+     semCount = 0;
+     
+     nextSem = 0;
+     
+     for (int i = 0; i < MAXSEMS; i++){
+        initSem(i);
+     }
+     
      for (int i = 0; i < USLOSS_MAX_SYSCALLS; i++){
         systemCallVec[i] = nullsys3;
      }
@@ -219,11 +235,52 @@ void terminateReal(int status){
 }
 
 void semCreate(USLOSS_Sysargs* sysArgs){
-
+    int value = (int)(long)sysArgs->arg1,
+        semID;
+    
+    if (semCount == MAXSEMS){
+        sysArgs->arg4 = (void*)(long)-1;
+    }else{
+        semID = semCreateReal(value);
+        
+        sysArgs->arg1 = (void*)(long)semID;
+        sysArgs->arg4 = (void*)(long)0;
+    }
+    
+    setUserMode();
 }
 
-int semCreateReal(int id){
-    return -1;
+int semCreateReal(int initVal){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("semCreateReal: in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+
+    int mutex,
+        mboxID;
+    mySemPtr newSem = &SemTable[nextSem];
+        
+    mutex = MboxCreate(0, 0);
+    mboxID = MboxCreate(initVal, 0); // Create semaphore with initial value
+    
+    MboxSend(mutex, NULL, 0);
+    
+    newSem->semID = nextSem;
+    newSem->value = initVal;
+    newSem->mutexID = mutex;
+    newSem->mboxID = mboxID;
+    
+    semCount++;
+    
+    if (semCount < MAXSEMS){
+        while (SemTable[nextSem].semID != -1){
+            nextSem++;
+        }
+    }
+
+    MboxReceive(mutex, NULL, 0);
+    
+    return newSem->semID;
 }
 
 void semP(USLOSS_Sysargs* sysArgs){
@@ -263,4 +320,14 @@ void getPID(USLOSS_Sysargs* sysArgs){
 
 void setUserMode(){
     int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
+}
+
+void initSem(int id){
+    mySemPtr sem = &SemTable[id % MAXSEMS];
+    
+    sem->semID = -1;
+    sem->value = 0;
+    sem->mutexID = -1;
+    sem->mboxID = -1;
+    sem->blocked = NULL;
 }
