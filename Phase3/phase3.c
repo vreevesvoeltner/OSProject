@@ -151,10 +151,6 @@ int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int pr
     newProc->nextSiblingPtr = NULL;
     newProc->parentPtr = &ProcTable[getpid() % MAXPROC];
     newProc->startFunc = func;
-    if (newProc->mbox == -1){
-        newProc->mbox = MboxCreate(0, 0);
-    }
-        
     
     if (newProc->parentPtr->childPtr == NULL){
         newProc->parentPtr->childPtr = newProc;
@@ -164,6 +160,9 @@ int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int pr
             temp = temp->nextSiblingPtr;
         }
         temp->nextSiblingPtr = newProc;
+    }
+    if (newProc->mbox == -1){
+        newProc->mbox = MboxCreate(0, 0);
     }
     
     MboxCondSend(newProc->mbox, 0, 0);
@@ -263,7 +262,7 @@ int semCreateReal(int initVal){
     mutex = MboxCreate(0, 0);
     mboxID = MboxCreate(initVal, 0); // Create semaphore with initial value
     
-    MboxSend(mutex, NULL, 0);
+    
     
     newSem->semID = nextSem;
     newSem->value = initVal;
@@ -277,18 +276,49 @@ int semCreateReal(int initVal){
             nextSem++;
         }
     }
-
-    MboxReceive(mutex, NULL, 0);
+    
+    MboxSend(mutex, NULL, 0);
+    for (int i = 0; i < initVal; i++){
+        MboxSend(mboxID, NULL, 0);
+    }
     
     return newSem->semID;
 }
 
 void semP(USLOSS_Sysargs* sysArgs){
-
+    int semID = (int)(long)sysArgs.arg1,
+        result = 0;
+    
+    if (SemTable[semID % MAXSEMS].semID == -1){
+        result = -1;
+    }else{
+        semPReal(semID);
+    }
+    
+    sysArgs.arg4 = (void*)(long)result;
+    setUserMode();
 }
 
 void semPReal(int id){
-
+    mySemPtr sem = &SemTable[id % MAXSEMS];
+    proc3Ptr current = &ProcTable[getPID() % MAXPROC];
+    int result;
+    
+    MboxReceive(sem->mutexID, NULL, 0);
+    if (sem->value == 0){
+        if (sem->blocked == NULL){
+            sem->blocked = current;
+        }else{
+            proc3Ptr temp = sem->blocked;
+            while (temp->nextProcPtr != NULL){
+                temp = temp->nextProcPtr;
+            }
+            temp->nextProcPtr = current;
+        }
+    }
+    MboxSend(sem->mutexID, NULL, 0);
+    
+    
 }
 
 void semV(USLOSS_Sysargs* sysArgs){
