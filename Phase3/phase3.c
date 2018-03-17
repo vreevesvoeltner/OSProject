@@ -141,11 +141,25 @@ int start2(char *arg)
     return pid;
 } /* start2 */
 
+/*
+nullsys3() 
+Assign every element of systemCallVec, which is visible in the provided phase2 libraries. 
+The nullsys3 function will call terminateReal to terminate the process, 
+rather than shutting down the simulation.
+*/
 void nullsys3(USLOSS_Sysargs* sysArgs){
     USLOSS_Console("nullsys(): Invalid syscall %d. Terminating...\n", sysArgs->number);
     terminateReal(1);
 }
 
+
+/*
+Spawn() 
+It invokes USLOSS_Syscall()
+The system call handler calls a function named spawn() 
+.Note lower case -- that extracts the arguments from the sysargs pointer, and 
+checks them for possible errors.  This function then calls spawnReal().
+*/
 void spawn(USLOSS_Sysargs* sysArgs){
     int (*func)(char *) = sysArgs->arg1,
         stack_size = (int)(long)sysArgs->arg3,
@@ -156,11 +170,22 @@ void spawn(USLOSS_Sysargs* sysArgs){
     
     pid = spawnReal(name, func, arg, stack_size, priority);
     
+	// terminate the current process if it is zapped 
+    if (isZapped())
+        terminateReal(1); 
+	
     setUserMode();
     sysArgs->arg1 = (void*)(long)pid;
     sysArgs->arg4 = (void*)(long)0;
 }
 
+/*
+* spawnReal() will create the process by using a call to fork1 to
+ create a process executing the code in spawnLaunch().  spawnReal()
+ and spawnLaunch() then coordinate the completion of the phase 3
+ process table entries needed for the new process.  spawnReal() will
+ return to the original caller of Spawn. 
+*/
 int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int priority) 
 {
     int pid;
@@ -197,6 +222,14 @@ int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int pr
     return pid;
 }
 
+/*
+spawnLaunch() 
+Begin executing the function passed to Spawn. spawnLaunch() will
+need to switch to user-mode before allowing user code to execute.
+spawnReal() will return to spawn(), which will put the return
+values back into the sysargs pointer, switch to user-mode, and 
+return to the user code that called Spawn.
+*/
 int spawnLaunch(char *sysArgs){
     int procSlot = getpid() % MAXPROC,
         status;
@@ -215,6 +248,12 @@ int spawnLaunch(char *sysArgs){
     return 0;
 }
 
+
+/*
+wait()
+Getting PID and the status of termination from calling  waitReal(). 
+Then it save those values to arg1 and arg2 
+*/
 void wait(USLOSS_Sysargs* sysArgs){
     int status,
         pid;
@@ -227,14 +266,29 @@ void wait(USLOSS_Sysargs* sysArgs){
     setUserMode();
 }
 
+/*
+waitReal() 
+Return the join status and join() return value which are:
+-2: the process does not have any children who have not already been joined.
+-1: the process was zapped while waiting for a child to quit.
+>0: the PID of the child that quit. 
+This operation synchronizes termination of a child with its parent
+*/
 int waitReal(int* status){
     return join(status);
 }
 
+
+/*
+terminate() 
+Passing the process PID to terminateReal() to terminate the process 
+then switch to user mode 
+*/
 void terminate(USLOSS_Sysargs* sysArgs){
     terminateReal((int)(long)sysArgs->arg1);
     setUserMode();
 }
+
 
 void terminateReal(int status){
     proc3Ptr current = &ProcTable[getpid() % MAXPROC],
