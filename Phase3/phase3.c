@@ -161,8 +161,12 @@ void spawn(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)(long)0;
 }
 
-int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int priority) 
-{
+int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int priority){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("spawnReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
     int pid;
     proc3Ptr newProc;
     
@@ -188,6 +192,7 @@ int spawnReal(char *name, int (*func)(char *), char *arg, int stack_size, int pr
         }
         temp->nextSiblingPtr = newProc;
     }
+    
     if (newProc->mbox == -1){
         newProc->mbox = MboxCreate(0, 0);
     }
@@ -228,6 +233,11 @@ void wait(USLOSS_Sysargs* sysArgs){
 }
 
 int waitReal(int* status){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("waitReal: in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
     return join(status);
 }
 
@@ -237,6 +247,11 @@ void terminate(USLOSS_Sysargs* sysArgs){
 }
 
 void terminateReal(int status){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("terminateReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
     proc3Ptr current = &ProcTable[getpid() % MAXPROC],
              temp = current->childPtr;
     while (temp != NULL) {
@@ -278,7 +293,7 @@ void semCreate(USLOSS_Sysargs* sysArgs){
 
 int semCreateReal(int initVal){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-        USLOSS_Console("semCreateReal: in user mode. Halting...\n");
+        USLOSS_Console("semCreateReal(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
 
@@ -287,7 +302,7 @@ int semCreateReal(int initVal){
         block;
     mySemPtr newSem = &SemTable[nextSem];
         
-    mutex = MboxCreate(0, 0);
+    mutex = MboxCreate(1, 0);
     mboxID = MboxCreate(1, sizeof(int)); // Create semaphore with initial value
     block = MboxCreate(0, 0);
     
@@ -326,6 +341,11 @@ void semP(USLOSS_Sysargs* sysArgs){
 }
 
 void semPReal(int id){
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("semPReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
     mySemPtr sem = &SemTable[id % MAXSEMS];
     proc3Ptr current = &ProcTable[getpid() % MAXPROC];
     int value,
@@ -343,10 +363,12 @@ void semPReal(int id){
             }
             temp->nextProcPtr = current;
         }
+        MboxSend(sem->mboxID, &value, sizeof(int));
         MboxSend(sem->mutexID, NULL, 0);
         /*If issue most likely because of this*/
         MboxReceive(sem->block, NULL, 0); // block self
         MboxReceive(sem->mutexID, NULL, 0); // Get mutex after we've unblocked
+        result = MboxReceive(sem->mboxID, &value, sizeof(int));
     }
     value--;
     MboxSend(sem->mboxID, &value, sizeof(int));
@@ -362,11 +384,41 @@ void semPReal(int id){
 }
 
 void semV(USLOSS_Sysargs* sysArgs){
-
+    int semID = (int)(long)sysArgs->arg1,
+        result = 0;
+    
+    if (SemTable[semID % MAXSEMS].semID == -1){
+        result = -1;
+    }else{
+        semVReal(semID);
+    }
+    
+    sysArgs->arg4 = (void*)(long)result;
+    setUserMode();
 }
 
 void semVReal(int id){
-
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("semVReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    mySemPtr sem = &SemTable[id % MAXSEMS];
+    proc3Ptr blockedProc;
+    int value;
+    
+    MboxReceive(sem->mutexID, NULL, 0);
+    MboxReceive(sem->mboxID, &value, sizeof(int));
+    value++;
+    
+    if (sem->blocked != NULL){
+        blockedProc = sem->blocked;
+        sem->blocked = blockedProc->nextProcPtr;
+        blockedProc->nextProcPtr = NULL;
+        
+        MboxSend(sem->block, NULL, 0);
+    }
+    MboxSend(sem->mboxID, &value, sizeof(int));
+    MboxSend(sem->mutexID, NULL, 0);
 }
 
 void semFree(USLOSS_Sysargs* sysArgs){
