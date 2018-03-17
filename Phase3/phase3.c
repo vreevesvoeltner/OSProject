@@ -315,7 +315,6 @@ void terminateReal(int status){
     proc3Ptr current = &ProcTable[getpid() % MAXPROC],
              temp = current->childPtr;
     while (temp != NULL) {
-        current->childPtr = temp->nextSiblingPtr;
         zap(temp->pid);
         temp = current->childPtr;
     }
@@ -552,7 +551,7 @@ is too coarse-grained; use USLOSS_DeviceInput to get the current time
 from the USLOSS clock .
 */
 void cpuTime(USLOSS_Sysargs* sysArgs){
-	*((int *)(sysArgs->arg1)) = readtime(); // readtime() is function from Phase1
+	sysArgs->arg1 = (void*)(long)readtime(); // readtime() is function from Phase1
 }
 
 /*
