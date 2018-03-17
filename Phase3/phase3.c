@@ -421,15 +421,17 @@ void semPReal(int id){
         MboxSend(sem->mutexID, NULL, 0);
         /*If issue most likely because of this*/
         MboxReceive(sem->block, NULL, 0); // block self
+        
+        /*Check if semaphore was freed*/
+        if (SemTable[id % MAXSEMS].semID == -1){
+            terminateReal(1);
+        }
+        
         MboxReceive(sem->mutexID, NULL, 0); // Get mutex after we've unblocked
         result = MboxReceive(sem->mboxID, &value, sizeof(int));
     }
     value--;
     MboxSend(sem->mboxID, &value, sizeof(int));
-    
-    if (SemTable[id % MAXSEMS].semID == -1){
-        terminateReal(1);
-    }
     
     if (result < 0){
         USLOSS_Console("semP(): Receive failed");
@@ -476,11 +478,46 @@ void semVReal(int id){
 }
 
 void semFree(USLOSS_Sysargs* sysArgs){
-
+    int semID = (int)(long)sysArgs->arg1;
+    
+    sysArgs->arg4 = (void*)(long)semFreeReal(semID);
+    
+    setUserMode();
 }
 
 int semFreeReal(int id){
-    return -1;
+    mySemPtr sem = &SemTable[id % MAXSEMS];
+    proc3Ptr blockedProc = sem->blocked,
+             temp;
+    int mutex,
+        mboxID,
+        block,
+        result = 0;
+
+    if (sem->semID == -1){
+        return -1;
+    }
+    mutex = sem->mutexID;
+    mboxID = sem->mboxID;
+    block = sem->block;
+    
+    initSem(id);
+    
+    while (blockedProc != NULL){
+        result = 1;
+        MboxSend(block, NULL, 0);
+        temp = blockedProc->nextProcPtr;
+        blockedProc->nextProcPtr = NULL;
+        blockedProc = temp;
+    }
+    
+    MboxRelease(mutex);
+    MboxRelease(mboxID);
+    MboxRelease(block);
+    
+    semCount--;
+    
+    return result;
 }
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
 
@@ -496,6 +533,9 @@ void getPID(USLOSS_Sysargs* sysArgs){
 
 void setUserMode(){
     int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
+    if (DEBUG3) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
 }
 
 void initSem(int id){
