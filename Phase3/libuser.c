@@ -1,6 +1,10 @@
 /*
  *  File:  libuser.c
- *
+ *	Students:
+ *	Veronica Reeves
+ *	Thai Pham
+ *	University of Arizona
+ *	Computer Science 452
  *  Description:  This file contains the interface declarations
  *                to the OS kernel support package.
  *
@@ -110,9 +114,7 @@ void Terminate(int status)
  *  Routine:  SemCreate
  *
  *  Description: Create a semaphore.
- *
- *  Arguments:
- *
+
  */
 int SemCreate(int value, int *semaphore)
 {
@@ -134,8 +136,6 @@ int SemCreate(int value, int *semaphore)
  *
  *  Description: "P" a semaphore.
  *
- *  Arguments:
- *
  */
 int SemP(int semaphore)
 {
@@ -155,9 +155,6 @@ int SemP(int semaphore)
  *  Routine:  SemV
  *
  *  Description: "V" a semaphore.
- *
- *  Arguments:
- *
  */
 int SemV(int semaphore)
 {
@@ -177,8 +174,6 @@ int SemV(int semaphore)
  *  Routine:  SemFree
  *
  *  Description: Free a semaphore.
- *
- *  Arguments:
  *
  */
 int SemFree(int semaphore)
@@ -200,8 +195,6 @@ int SemFree(int semaphore)
  *
  *  Description: This is the call entry point for getting the time of day.
  *
- *  Arguments:
- *
  */
 void GetTimeofDay(int *tod)                           
 {
@@ -220,9 +213,6 @@ void GetTimeofDay(int *tod)
  *  Routine:  CPUTime
  *
  *  Description: This is the call entry point for the process' CPU time.
- *
- *  Arguments:
- *
  */
 void CPUTime(int *cpu)                           
 {
@@ -241,9 +231,6 @@ void CPUTime(int *cpu)
  *  Routine:  GetPID
  *
  *  Description: This is the call entry point for the process' PID.
- *
- *  Arguments:
- *
  */
 void GetPID(int *pid)                           
 {

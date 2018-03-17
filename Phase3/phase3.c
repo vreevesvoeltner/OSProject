@@ -1,3 +1,30 @@
+/* ------------------------------------------------------------------------
+phase3.c 
+Students:
+Veronica Reeves
+Thai Pham
+
+University of Arizona
+Computer Science 452
+
+Summary:
+designing and implementing a support level that creates user mode processes
+and then provides system services to the user processes. All of these
+services will be requested by user programs through the syscall interface. 
+Many of the services that the support level provides are almost completely 
+implemented by the kernel primitives. In addition, in phase 4, the support 
+level will be expanded to contain system driver processes to handle
+the pseudo-clock, terminal input, and disk I/O. These system processes run
+in kernel mode and with interrupts enabled.
+In phases 1 and 2, when an error occurred, the kernel
+reported the error and shutdown USLOSS. This simulates an operating system
+crash. Starting with phase 3 and user-level processes, the operating system
+should not crash when an error is made by a user-level process. Instead, 
+the offending process will terminate
+------------------------------------------------------------------------ */
+
+
+
 #include <usloss.h>
 #include <usyscall.h>
 #include <phase1.h>
