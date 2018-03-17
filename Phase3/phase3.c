@@ -540,7 +540,7 @@ getTimeOfDay()
 Set arg1 to current system time
 */
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
-	int tofd;
+	int tofd; // 11 and 12 fail
 	int r = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &tofd);
 	sysArgs->arg1 = (void*)(long)tofd;
 	if (DEBUG3) {
