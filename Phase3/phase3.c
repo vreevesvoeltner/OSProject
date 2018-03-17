@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-phase3.c 
+phase3.c +
 Students:
 Veronica Reeves
 Thai Pham
@@ -231,7 +231,11 @@ values back into the sysargs pointer, switch to user-mode, and
 return to the user code that called Spawn.
 */
 int spawnLaunch(char *sysArgs){
-    int procSlot = getpid() % MAXPROC,
+    // terminate the current process if it is zapped 
+    if (isZapped())
+        terminateReal(1); 
+	
+	int procSlot = getpid() % MAXPROC,
         status;
     
     if (ProcTable[procSlot].mbox == -1){
@@ -289,7 +293,9 @@ void terminate(USLOSS_Sysargs* sysArgs){
     setUserMode();
 }
 
-
+/*
+Terminate the current process and all its children 
+*/
 void terminateReal(int status){
     proc3Ptr current = &ProcTable[getpid() % MAXPROC],
              temp = current->childPtr;
@@ -314,11 +320,16 @@ void terminateReal(int status){
     quit(status);
 }
 
+/*
+semCreate ()
+	Create a new semaphore. 
+	and set value for arg1 and arg4 
+*/
 void semCreate(USLOSS_Sysargs* sysArgs){
     int value = (int)(long)sysArgs->arg1,
         semID;
     
-    if (semCount == MAXSEMS){
+    if (semCount == MAXSEMS || value < 0){
         sysArgs->arg4 = (void*)(long)-1;
     }else{
         semID = semCreateReal(value);
@@ -365,6 +376,11 @@ int semCreateReal(int initVal){
     return newSem->semID;
 }
 
+/*
+semP ()
+	Perform the P operation on semaphore. 
+	This will call semaphore to perform the operation 
+*/
 void semP(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1,
         result = 0;
@@ -378,6 +394,7 @@ void semP(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)(long)result;
     setUserMode();
 }
+
 
 void semPReal(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
@@ -430,16 +447,31 @@ void semFree(USLOSS_Sysargs* sysArgs){
 int semFreeReal(int id){
     return -1;
 }
+/*
+getTimeOfDay()
+Set arg1 to current system time
+*/
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
-
+	*((int *)(args->arg1)) = USLOSS_Clock();
 }
 
+/*
+cpuTime ()
+set arg1 to the CPU time (in milliseconds) used by the current process.
+This means that the kernel must record the amount of processor time used 
+by each process. Do not use the clock interrupt to measure CPU time as it 
+is too coarse-grained; use USLOSS_DeviceInput to get the current time 
+from the USLOSS clock .
+*/
 void cpuTime(USLOSS_Sysargs* sysArgs){
-
+	*((int *)(args->arg1)) = readtime(); // readtime() is function from Phase1
 }
 
+/*
+set arg1 to the PID of the calling process
+*/
 void getPID(USLOSS_Sysargs* sysArgs){
-
+	*((int *)(args->arg1)) = getpid(); // getpid() (Phase1) 
 }
 
 void setUserMode(){
