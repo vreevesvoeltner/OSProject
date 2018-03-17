@@ -559,7 +559,7 @@ void cpuTime(USLOSS_Sysargs* sysArgs){
 set arg1 to the PID of the calling process
 */
 void getPID(USLOSS_Sysargs* sysArgs){
-	*((int *)(sysArgs->arg1)) = getpid(); // getpid() (Phase1) 
+    sysArgs->arg1 = (void*)(long)getpid(); // getpid() (Phase1) 
 }
 
 void setUserMode(){
