@@ -541,7 +541,6 @@ getTimeOfDay()
 Set arg1 to current system time
 */
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
-	*((int *)(args->arg1)) = USLOSS_Clock();
 }
 
 /*
@@ -553,14 +552,14 @@ is too coarse-grained; use USLOSS_DeviceInput to get the current time
 from the USLOSS clock .
 */
 void cpuTime(USLOSS_Sysargs* sysArgs){
-	*((int *)(args->arg1)) = readtime(); // readtime() is function from Phase1
+	*((int *)(sysArgs->arg1)) = readtime(); // readtime() is function from Phase1
 }
 
 /*
 set arg1 to the PID of the calling process
 */
 void getPID(USLOSS_Sysargs* sysArgs){
-	*((int *)(args->arg1)) = getpid(); // getpid() (Phase1) 
+	*((int *)(sysArgs->arg1)) = getpid(); // getpid() (Phase1) 
 }
 
 void setUserMode(){
