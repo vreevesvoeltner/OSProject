@@ -256,18 +256,19 @@ int semCreateReal(int initVal){
     }
 
     int mutex,
-        mboxID;
+        mboxID,
+        block;
     mySemPtr newSem = &SemTable[nextSem];
         
     mutex = MboxCreate(0, 0);
-    mboxID = MboxCreate(initVal, 0); // Create semaphore with initial value
-    
-    
+    mboxID = MboxCreate(1, sizeof(int)); // Create semaphore with initial value
+    block = MboxCreate(0, 0);
     
     newSem->semID = nextSem;
     newSem->value = initVal;
     newSem->mutexID = mutex;
     newSem->mboxID = mboxID;
+    newSem->block = block;
     
     semCount++;
     
@@ -278,15 +279,13 @@ int semCreateReal(int initVal){
     }
     
     MboxSend(mutex, NULL, 0);
-    for (int i = 0; i < initVal; i++){
-        MboxSend(mboxID, NULL, 0);
-    }
+    MboxSend(mboxID, (void*)&initVal, sizeof(int));
     
     return newSem->semID;
 }
 
 void semP(USLOSS_Sysargs* sysArgs){
-    int semID = (int)(long)sysArgs.arg1,
+    int semID = (int)(long)sysArgs->arg1,
         result = 0;
     
     if (SemTable[semID % MAXSEMS].semID == -1){
@@ -295,17 +294,19 @@ void semP(USLOSS_Sysargs* sysArgs){
         semPReal(semID);
     }
     
-    sysArgs.arg4 = (void*)(long)result;
+    sysArgs->arg4 = (void*)(long)result;
     setUserMode();
 }
 
 void semPReal(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
-    proc3Ptr current = &ProcTable[getPID() % MAXPROC];
-    int result;
+    proc3Ptr current = &ProcTable[getpid() % MAXPROC];
+    int value,
+        result;
     
     MboxReceive(sem->mutexID, NULL, 0);
-    if (sem->value == 0){
+    result = MboxReceive(sem->mboxID, &value, sizeof(int));
+    if (value == 0){
         if (sem->blocked == NULL){
             sem->blocked = current;
         }else{
@@ -315,10 +316,22 @@ void semPReal(int id){
             }
             temp->nextProcPtr = current;
         }
+        MboxSend(sem->mutexID, NULL, 0);
+        /*If issue most likely because of this*/
+        MboxReceive(sem->block, NULL, 0); // block self
+        MboxReceive(sem->mutexID, NULL, 0); // Get mutex after we've unblocked
+    }
+    value--;
+    MboxSend(sem->mboxID, &value, sizeof(int));
+    
+    if (SemTable[id % MAXSEMS].semID == -1){
+        terminateReal(1);
+    }
+    
+    if (result < 0){
+        USLOSS_Console("semP(): Receive failed");
     }
     MboxSend(sem->mutexID, NULL, 0);
-    
-    
 }
 
 void semV(USLOSS_Sysargs* sysArgs){
@@ -359,5 +372,6 @@ void initSem(int id){
     sem->value = 0;
     sem->mutexID = -1;
     sem->mboxID = -1;
+    sem->block = -1;
     sem->blocked = NULL;
 }

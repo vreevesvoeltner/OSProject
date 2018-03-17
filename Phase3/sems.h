@@ -23,7 +23,8 @@ struct mySem{
     int semID,
         value,
         mutexID,
-        mboxID;
+        mboxID,
+        block;
     proc3Ptr blocked;
 };
 
