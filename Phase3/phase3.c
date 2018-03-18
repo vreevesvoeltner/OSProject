@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-phase3.c +
+phase3.c .
 Students:
 Veronica Reeves
 Thai Pham
@@ -170,10 +170,10 @@ void spawn(USLOSS_Sysargs* sysArgs){
     
     pid = spawnReal(name, func, arg, stack_size, priority);
     
-	// terminate the current process if it is zapped 
+    // terminate the current process if it is zapped 
     if (isZapped())
         terminateReal(1); 
-	
+    
     setUserMode();
     sysArgs->arg1 = (void*)(long)pid;
     sysArgs->arg4 = (void*)(long)0;
@@ -239,8 +239,8 @@ int spawnLaunch(char *sysArgs){
     // terminate the current process if it is zapped 
     if (isZapped())
         terminateReal(1); 
-	
-	int procSlot = getpid() % MAXPROC,
+    
+    int procSlot = getpid() % MAXPROC,
         status;
     
     if (ProcTable[procSlot].mbox == -1){
@@ -336,8 +336,8 @@ void terminateReal(int status){
 
 /*
 semCreate ()
-	Create a new semaphore. 
-	and set value for arg1 and arg4 
+    Create a new semaphore. 
+    and set value for arg1 and arg4 
 */
 void semCreate(USLOSS_Sysargs* sysArgs){
     int value = (int)(long)sysArgs->arg1,
@@ -354,6 +354,14 @@ void semCreate(USLOSS_Sysargs* sysArgs){
     
     setUserMode();
 }
+
+
+/*
+semCreate ()
+    Create a new semaphore. 
+    and create mailbox and initializing 
+    all their values
+*/
 
 int semCreateReal(int initVal){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -392,8 +400,8 @@ int semCreateReal(int initVal){
 
 /*
 semP ()
-	Perform the P operation on semaphore. 
-	This will call semaphore to perform the operation 
+    Perform the P operation on semaphore. 
+    This will call semaphore to perform the operation 
 */
 void semP(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1,
@@ -455,6 +463,10 @@ void semPReal(int id){
     MboxSend(sem->mutexID, NULL, 0);
 }
 
+/*
+semV()
+Perform operation V
+*/
 void semV(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1,
         result = 0;
@@ -468,6 +480,7 @@ void semV(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)(long)result;
     setUserMode();
 }
+
 
 void semVReal(int id){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -493,6 +506,11 @@ void semVReal(int id){
     MboxSend(sem->mutexID, NULL, 0);
 }
 
+/*
+SemFree()
+Free semaphore and return number of blocked 
+process 
+*/
 void semFree(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1;
     
@@ -501,6 +519,13 @@ void semFree(USLOSS_Sysargs* sysArgs){
     setUserMode();
 }
 
+
+/*
+semFreeReal()
+Get the semaphore from the semTable by using it id. 
+Then free that semaphore and release the blocked mail 
+box and processes. 
+*/
 int semFreeReal(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
     proc3Ptr blockedProc = sem->blocked,
@@ -537,9 +562,16 @@ int semFreeReal(int id){
 }
 /*
 getTimeOfDay()
-Set arg1 to current system time
+    Set arg1 to current system time
 */
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
+    int tofd;
+    int r = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &tofd);
+    sysArgs->arg1 = (void*)(long)tofd;
+    if (DEBUG3) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
+    setUserMode();
 }
 
 /*
@@ -551,16 +583,26 @@ is too coarse-grained; use USLOSS_DeviceInput to get the current time
 from the USLOSS clock .
 */
 void cpuTime(USLOSS_Sysargs* sysArgs){
-	sysArgs->arg1 = (void*)(long)readtime(); // readtime() is function from Phase1
+    int rt = readtime();
+    //USLOSS_Console("--------------->>CPU time: %d \n", rt);
+    sysArgs->arg4 = (void*)(long)rt; // readtime() is function from Phase1
+    setUserMode();
 }
 
 /*
-set arg1 to the PID of the calling process
+getPID()
+    Set arg1 to the PID of the calling process
 */
 void getPID(USLOSS_Sysargs* sysArgs){
-	sysArgs->arg1 = (void*)(long)getpid(); // getpid() (Phase1`s function) 
+    int ip = getpid();
+    sysArgs->arg1 = (void*)(long)ip; // getpid() (Phase1`s function) 
+    setUserMode();
 }
 
+/*    
+setUserMode()
+    Switch from kernel to user mode 
+*/
 void setUserMode(){
     int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
     if (DEBUG3) {
@@ -568,6 +610,11 @@ void setUserMode(){
     }
 }
 
+/*
+initSem()
+Initialized all variables in one semaphore
+when it first created 
+*/
 void initSem(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
     
