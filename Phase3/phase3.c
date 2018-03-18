@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-phase3.c +
+phase3.c .
 Students:
 Veronica Reeves
 Thai Pham
@@ -355,6 +355,14 @@ void semCreate(USLOSS_Sysargs* sysArgs){
     setUserMode();
 }
 
+
+/*
+semCreate ()
+	Create a new semaphore. 
+	and create mailbox and initializing 
+	all their values
+*/
+
 int semCreateReal(int initVal){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
         USLOSS_Console("semCreateReal(): in user mode. Halting...\n");
@@ -455,6 +463,10 @@ void semPReal(int id){
     MboxSend(sem->mutexID, NULL, 0);
 }
 
+/*
+semV()
+Perform operation V
+*/
 void semV(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1,
         result = 0;
@@ -468,6 +480,7 @@ void semV(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)(long)result;
     setUserMode();
 }
+
 
 void semVReal(int id){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
@@ -493,6 +506,11 @@ void semVReal(int id){
     MboxSend(sem->mutexID, NULL, 0);
 }
 
+/*
+SemFree()
+Free semaphore and return number of blocked 
+process 
+*/
 void semFree(USLOSS_Sysargs* sysArgs){
     int semID = (int)(long)sysArgs->arg1;
     
@@ -501,6 +519,13 @@ void semFree(USLOSS_Sysargs* sysArgs){
     setUserMode();
 }
 
+
+/*
+semFreeReal()
+Get the semaphore from the semTable by using it id. 
+Then free that semaphore and release the blocked mail 
+box and processes. 
+*/
 int semFreeReal(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
     proc3Ptr blockedProc = sem->blocked,
@@ -537,7 +562,7 @@ int semFreeReal(int id){
 }
 /*
 getTimeOfDay()
-Set arg1 to current system time
+	Set arg1 to current system time
 */
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
 	int tofd;
@@ -565,7 +590,8 @@ void cpuTime(USLOSS_Sysargs* sysArgs){
 }
 
 /*
-set arg1 to the PID of the calling process
+getPID()
+	Set arg1 to the PID of the calling process
 */
 void getPID(USLOSS_Sysargs* sysArgs){
 	int ip = getpid();
@@ -573,6 +599,10 @@ void getPID(USLOSS_Sysargs* sysArgs){
 	setUserMode();
 }
 
+/*	
+setUserMode()
+	Switch from kernel to user mode 
+*/
 void setUserMode(){
     int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
     if (DEBUG3) {
@@ -580,6 +610,11 @@ void setUserMode(){
     }
 }
 
+/*
+initSem()
+Initialized all variables in one semaphore
+when it first created 
+*/
 void initSem(int id){
     mySemPtr sem = &SemTable[id % MAXSEMS];
     
