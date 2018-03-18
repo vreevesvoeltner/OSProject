@@ -314,7 +314,9 @@ void terminateReal(int status){
     
     proc3Ptr current = &ProcTable[getpid() % MAXPROC],
              temp = current->childPtr;
+    current->mbox = -1;
     while (temp != NULL) {
+        ProcTable[temp->pid].mbox = -1;
         zap(temp->pid);
         temp = current->childPtr;
     }
