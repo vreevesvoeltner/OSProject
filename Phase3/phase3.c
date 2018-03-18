@@ -551,16 +551,14 @@ is too coarse-grained; use USLOSS_DeviceInput to get the current time
 from the USLOSS clock .
 */
 void cpuTime(USLOSS_Sysargs* sysArgs){
-	int readtime = readtime();
-	sysArgs->arg1 = (void*)(long)readtime; // readtime() is function from Phase1
+	sysArgs->arg1 = (void*)(long)readtime(); // readtime() is function from Phase1
 }
 
 /*
 set arg1 to the PID of the calling process
 */
 void getPID(USLOSS_Sysargs* sysArgs){
-	ip = getid();
-	sysArgs->arg1 = (void*)(long)ip; // getpid() (Phase1`s function) 
+	sysArgs->arg1 = (void*)(long)getpid(); // getpid() (Phase1`s function) 
 }
 
 void setUserMode(){
