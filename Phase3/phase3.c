@@ -456,7 +456,7 @@ void semPReal(int id){
         MboxReceive(sem->mutexID, NULL, 0); // Get mutex after we've unblocked
         result = MboxReceive(sem->mboxID, &value, sizeof(int));
     }
-    value--;
+    value -= 1;
     MboxSend(sem->mboxID, &value, sizeof(int));
     
     if (result < 0){
@@ -502,10 +502,13 @@ void semVReal(int id){
         sem->blocked = blockedProc->nextProcPtr;
         blockedProc->nextProcPtr = NULL;
         
+        MboxSend(sem->mboxID, &value, sizeof(int));
+        MboxSend(sem->mutexID, NULL, 0);
         MboxSend(sem->block, NULL, 0);
+    }else{
+        MboxSend(sem->mboxID, &value, sizeof(int));
+        MboxSend(sem->mutexID, NULL, 0);
     }
-    MboxSend(sem->mboxID, &value, sizeof(int));
-    MboxSend(sem->mutexID, NULL, 0);
 }
 
 /*
