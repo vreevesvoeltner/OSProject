@@ -540,12 +540,13 @@ getTimeOfDay()
 Set arg1 to current system time
 */
 void getTimeOfDay(USLOSS_Sysargs* sysArgs){
-	int tofd; // 11 and 12 fail
+	int tofd;
 	int r = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &tofd);
 	sysArgs->arg1 = (void*)(long)tofd;
 	if (DEBUG3) {
 		USLOSS_Console("%d get way from warning unused variable\n", r);
 	}
+	setUserMode();
 }
 
 /*
@@ -558,7 +559,9 @@ from the USLOSS clock .
 */
 void cpuTime(USLOSS_Sysargs* sysArgs){
 	int rt = readtime();
-	sysArgs->arg1 = (void*)(long)rt; // readtime() is function from Phase1
+	//USLOSS_Console("--------------->>CPU time: %d \n", rt);
+	sysArgs->arg4 = (void*)(long)rt; // readtime() is function from Phase1
+	setUserMode();
 }
 
 /*
@@ -567,6 +570,7 @@ set arg1 to the PID of the calling process
 void getPID(USLOSS_Sysargs* sysArgs){
 	int ip = getpid();
 	sysArgs->arg1 = (void*)(long)ip; // getpid() (Phase1`s function) 
+	setUserMode();
 }
 
 void setUserMode(){
