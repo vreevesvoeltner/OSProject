@@ -29,20 +29,10 @@ int getpid();
 void initProcTable();
 void initProc(int);
 void readyUp(procPtr, int);
-<<<<<<< HEAD
-
-
-=======
 int zap(int pid);
 int isZapped(void);
 int getpid(void);
 void dumpProcesses(void);
-void initQueue(Queue* queue, int type);
-int isEmptyQueue(Queue* queue);
-procPtr peek(procQueue* queue);
-void enqueue(Queue* queue, procPtr newProc);
-procPtr dequeue(Queue* queue); 
->>>>>>> d306b28bd6a9b6d569cf41b4eb7f8fa9f3151f61
 /* -------------------------- Globals ------------------------------------- */
 
 // Patrick's debugging global variable...
