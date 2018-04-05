@@ -108,16 +108,13 @@ void start3(void)
         diskLst[i] = NULL;
         sempReal(semRunning);
         
-        //diskSizeReal(i, &tempSec, &tempTrack, &ProcTable[diskPID[i] % MAXPROC].track);
+        diskSizeReal(i, &tempSec, &tempTrack, &ProcTable[diskPID[i] % MAXPROC].track);
     }
 
     // May be other stuff to do here before going on to terminal drivers
-
-    /*
-     * Create terminal device drivers.
-     */
-     /*
+/*
      for (i = 0; i < USLOSS_TERM_UNITS; i++){
+        sprintf(buf, "%d", i); 
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
             USLOSS_Console("start3(): Can't create term driver\n");
@@ -126,7 +123,7 @@ void start3(void)
         ProcTable[termPID[i][0] % MAXPROC].pid = termPID[i][0];
         sempReal(semRunning);
         
-        termPID[i][1] = fork1(name, TermReader, termbuf, USLOSS_MIN_STACK, 2);
+        termPID[i][1] = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][1] < 0) {
             USLOSS_Console("start3(): Can't create term reader\n");
             USLOSS_Halt(1);
@@ -134,7 +131,7 @@ void start3(void)
         ProcTable[termPID[i][1] % MAXPROC].pid = termPID[i][1];
         sempReal(semRunning);
         
-        termPID[i][2] = fork1(name, TermWriter, termbuf, USLOSS_MIN_STACK, 2);
+        termPID[i][2] = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][2] < 0) {
             USLOSS_Console("start3(): Can't create term writer\n");
             USLOSS_Halt(1);
@@ -142,8 +139,7 @@ void start3(void)
         ProcTable[termPID[i][2] % MAXPROC].pid = termPID[i][2];
         sempReal(semRunning);
      }
-     */
-
+*/
     /*
      * Create first user-level process and wait for it to finish.
      * These are lower-case because they are not system calls;
@@ -166,7 +162,7 @@ void start3(void)
         zap(diskPID[i]);
         join(&status);
     }
-    /*
+/*   
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         
@@ -286,12 +282,15 @@ int DiskDriver(char *arg){
             if (current->request.opr == USLOSS_DISK_TRACKS){
                 USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &current->request);
                 result = waitDevice(USLOSS_DISK_DEV, unit, &status);
+                
                 if (result != 0) {
                     return 0;
                 }
             }else{
                 //do reading and writing
             }
+            
+            semvReal(current->waitSem);
         }
         continue;
     }
@@ -392,20 +391,24 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
 }
 
 int TermDriver(char *arg){
-    int result;
+    int unit = atoi((char*)arg),
+        status,
+        result;
     
     semvReal(semRunning);
     while (!isZapped()){
-        //result = waitDevice(USLOSS_TERM_INT, unit, &status);
-        continue;
+        result = waitDevice(USLOSS_TERM_INT, unit, &status);
+        if (result != 0)
+            return 0;
     }
-    return -1;
+    return 0;
 }
 
 int TermReader(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
-        continue;
+        //Receive from this charReceive mailbox corresponding to this unit
+        //When a full line is read send it to the lineSend mailbox corresponding to this unit
     }
     return -1;
 }
