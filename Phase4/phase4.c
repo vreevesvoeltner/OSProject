@@ -10,9 +10,14 @@
 #include <stdio.h>
 #include <stdlib.h> /* needed for atoi() */
 
-int  semRunning;
+int  semRunning,
+     diskPID[USLOSS_DISK_UNITS],
+     termPID[USLOSS_TERM_UNITS][3];
 
 proc4 ProcTable[MAXPROC];
+
+proc4Ptr sleepLst = NULL,
+         diskLst[USLOSS_DISK_UNITS];
 
 int ClockDriver(char *);
 int DiskDriver(char *);
@@ -32,21 +37,23 @@ void termRead(USLOSS_Sysargs*);
 int termReadReal(int, int, char *);
 void termWrite(USLOSS_Sysargs*);
 int termWriteReal(int, int, char *);
+int getTime();
 void initProc(int);
+void setUserMode();
 
 //int diskReadOrWriteReal(int, int, int, int, void *, int);
 
 void start3(void)
 {
     char    name[128],
-            termbuf[10],
+            buf[10],
             filename[50];
     int     i,
-            clockPID,
-            diskPID[USLOSS_DISK_UNITS],
-            termPID[USLOSS_TERM_UNITS][3],
             pid,
-            status;
+            clockPID,
+            status,
+            tempSec,
+            tempTrack;
     /*
      * Check kernel mode here.
      */
@@ -65,9 +72,9 @@ void start3(void)
      * be used instead -- your choice.
      */
      
-     for (i = 0; i < MAXPROC; i++){
+    for (i = 0; i < MAXPROC; i++){
         initProc(i);
-     }
+    }
      
     semRunning = semcreateReal(0);
     clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
@@ -91,15 +98,17 @@ void start3(void)
 
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
         //TODO: Figure out what is needed for Disk buffer
-        diskPID[i] = fork1("Disk Driver", DiskDriver, NULL, USLOSS_MIN_STACK, 2);
+        sprintf(buf, "%d", i);
+        diskPID[i] = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
         if (diskPID[i] < 0) {
             USLOSS_Console("start3(): Can't create disk driver\n");
             USLOSS_Halt(1);
         }
         ProcTable[diskPID[i] % MAXPROC].pid = diskPID[i];
+        diskLst[i] = NULL;
         sempReal(semRunning);
         
-        //TODO: Get size of Disk
+        //diskSizeReal(i, &tempSec, &tempTrack, &ProcTable[diskPID[i] % MAXPROC].track);
     }
 
     // May be other stuff to do here before going on to terminal drivers
@@ -107,8 +116,9 @@ void start3(void)
     /*
      * Create terminal device drivers.
      */
+     /*
      for (i = 0; i < USLOSS_TERM_UNITS; i++){
-        termPID[i][0] = fork1(name, TermDriver, termbuf, USLOSS_MIN_STACK, 2);
+        termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
             USLOSS_Console("start3(): Can't create term driver\n");
             USLOSS_Halt(1);
@@ -132,6 +142,7 @@ void start3(void)
         ProcTable[termPID[i][2] % MAXPROC].pid = termPID[i][2];
         sempReal(semRunning);
      }
+     */
 
     /*
      * Create first user-level process and wait for it to finish.
@@ -151,10 +162,11 @@ void start3(void)
     
     for(i = 0; i < USLOSS_DISK_UNITS; i++){
         //TODO: Get mutex
+        semvReal(ProcTable[diskPID[i]].waitSem);
         zap(diskPID[i]);
         join(&status);
     }
-    
+    /*
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         
@@ -173,14 +185,13 @@ void start3(void)
         zap(termPID[i][2]);
         join(&status);
     }
-
+*/
     // eventually, at the end:
     quit(0);
     
 }
 
-int ClockDriver(char *arg)
-{
+int ClockDriver(char *arg){
     int result;
     int status;
 
@@ -198,20 +209,93 @@ int ClockDriver(char *arg)
          * Compute the current time and wake up any processes
          * whose time has come.
          */
+        proc4Ptr temp;
+        while (sleepLst != NULL && sleepLst->sleepTime <= getTime()){
+            temp = sleepLst;
+            sleepLst = temp->nextSleepPtr;
+            semvReal(temp->waitSem);
+        }
     }
-    return -1;
+    return 0;
 }
 
 void sleep(USLOSS_Sysargs* sysArgs){
-    
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("sleep(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    sysArgs->arg4 = (void*)(long)sleepReal((int)(long)sysArgs->arg1);
+    setUserMode();
 }
 
 int sleepReal(int secs){
-    return -1;
+    proc4Ptr current = &ProcTable[getpid() % MAXPROC];
+    
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("sleepReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    if (secs < 0)
+        return -1;
+    
+    if (current->pid != getpid()){
+        initProc(getpid());
+        current->pid = getpid();
+    }
+    
+    current->sleepTime = getTime() + secs * 1000000;
+    
+    //Add current proc to list of sleeping processes
+    if (sleepLst == NULL){
+        sleepLst = current;
+    }else{
+        if (current->sleepTime <= sleepLst->sleepTime){
+            current->nextSleepPtr = sleepLst;
+            sleepLst = current;
+        }else{
+            proc4Ptr temp = sleepLst;
+            while (temp->nextSleepPtr != NULL && temp->nextSleepPtr->sleepTime < current->sleepTime){
+                temp = temp->nextSleepPtr;
+            }
+            current->nextSleepPtr = temp->nextSleepPtr;
+            temp->nextSleepPtr = current;
+        }
+    }
+    
+    sempReal(current->waitSem); // Block until awakened
+    
+    return 0;
 }
 
 int DiskDriver(char *arg){
-    return -1;
+    int unit = atoi((char*)arg),
+        result,
+        status;
+    
+    semvReal(semRunning);
+    while (!isZapped()){
+        sempReal(ProcTable[getpid() % MAXPROC].waitSem);
+        if (isZapped())
+            break;
+            
+        if (diskLst[unit] != NULL){
+            proc4Ptr current = diskLst[unit];
+            diskLst[unit] = current->nextDiskPtr;
+            current->nextDiskPtr = NULL;
+            
+            if (current->request.opr == USLOSS_DISK_TRACKS){
+                USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &current->request);
+                result = waitDevice(USLOSS_DISK_DEV, unit, &status);
+                if (result != 0) {
+                    return 0;
+                }
+            }else{
+                //do reading and writing
+            }
+        }
+        continue;
+    }
+    return 0;
 }
 
 void diskRead(USLOSS_Sysargs* sysArgs){
@@ -227,22 +311,102 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
 }
 
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
+    
     return -1;
 }
 
-void diskSize(USLOSS_Sysargs* sysArgs){
-
+void diskSize(USLOSS_Sysargs* args) {
+    int unit = (long) args->arg1,
+        sector,
+        track,
+        disk;
+        
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("diskSize(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    args->arg1 = (void*)(long)sector;
+    args->arg2 = (void*)(long)track;
+    args->arg3 = (void*)(long)disk;
+    args->arg4 = (void*)(long)diskSizeReal(unit, &sector, &track, &disk);
+    
+    setUserMode();
 }
 
 int diskSizeReal(int unit, int* sector, int* track, int* disk){
-    return -1;
+    proc4Ptr driver,
+             current;
+    USLOSS_DeviceRequest r;
+
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("diskSizeReal(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (unit < 0 || unit > USLOSS_DISK_UNITS || sector == NULL || track == NULL || disk == NULL) {
+        if (DEBUG4)
+            USLOSS_Console("diskSizeReal: given illegal argument(s)\n");
+        return -1;
+    }
+    
+    driver = &ProcTable[diskPID[unit]];
+    
+    if (driver->track == -1){
+        current = &ProcTable[getpid() % MAXPROC];
+        if (current->pid != getpid()){
+            initProc(getpid() % MAXPROC);
+            current->pid = getpid();
+        }
+        
+        current->track = 0;
+        r.opr = USLOSS_DISK_TRACKS;
+        r.reg1 = &driver->track;
+        current->request = r;
+        
+        if (diskLst[unit] == NULL){
+            diskLst[unit] = current;
+        }else{
+            if (diskLst[unit]->track > current->track){
+                current->nextDiskPtr = diskLst[unit];
+                diskLst[unit] = current;
+            }else{
+                proc4Ptr temp = diskLst[unit];
+                while (temp->nextDiskPtr != NULL && temp->nextDiskPtr->track <= current->track){
+                    temp = temp->nextDiskPtr;
+                }
+                current->nextDiskPtr = temp->nextDiskPtr;
+                temp->nextDiskPtr = current;
+            }
+        }
+        
+        semvReal(driver->waitSem);
+        sempReal(current->waitSem);
+    }
+    
+    *sector = USLOSS_DISK_SECTOR_SIZE;
+    *track = USLOSS_DISK_TRACK_SIZE;
+    *disk = driver->track;
+    
+    return 0;
 }
 
 int TermDriver(char *arg){
+    int result;
+    
+    semvReal(semRunning);
+    while (!isZapped()){
+        //result = waitDevice(USLOSS_TERM_INT, unit, &status);
+        continue;
+    }
     return -1;
 }
 
 int TermReader(char *arg){
+    semvReal(semRunning);
+    while (!isZapped()){
+        continue;
+    }
     return -1;
 }
 
@@ -255,6 +419,10 @@ int termReadReal(int unit, int size, char *buffer){
 }
 
 int TermWriter(char *arg){
+    semvReal(semRunning);
+    while (!isZapped()){
+        continue;
+    }
     return -1;
 }
 
@@ -270,9 +438,27 @@ void initProc(int i){
     proc4Ptr current = &ProcTable[i];
     
     current->pid = -1;
-    //TODO init mutex
+    current->track = -1;
+    current->waitSem = semcreateReal(0);
+    current->sleepTime = -1;
     current->nextProcPtr = NULL;
-    current->childPtr = NULL;
-    current->nextSiblingPtr = NULL;
-    current->parentPtr = NULL;
+    current->nextDiskPtr = NULL;
+    current->nextSleepPtr = NULL;
+}
+
+int getTime(){
+    int currentTime;
+    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
+    return currentTime;
+}
+
+/*    
+setUserMode()
+    Switch from kernel to user mode 
+*/
+void setUserMode(){
+    int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
+    if (DEBUG4) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
 }

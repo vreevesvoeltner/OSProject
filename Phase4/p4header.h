@@ -8,12 +8,13 @@ typedef struct proc4 *proc4Ptr;
 
 struct proc4{
     int pid,
-        //TODO Decide between mailboxes or semaphores
-        (* startFunc) (char *);
+        track,
+        sleepTime,  // Time when the process should wake up
+        waitSem;    // Use to block processes from continuing
     proc4Ptr nextProcPtr,
-             childPtr,
-             nextSiblingPtr,
-             parentPtr;
+             nextDiskPtr,
+             nextSleepPtr; // Next process in the sleep list
+    USLOSS_DeviceRequest request;
 };
 
 #endif
