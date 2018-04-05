@@ -324,11 +324,10 @@ void diskSize(USLOSS_Sysargs* args) {
         USLOSS_Console("diskSize(): in user mode. Halting...\n");
         USLOSS_Halt(1);
     }
-    
+    args->arg4 = (void*)(long)diskSizeReal(unit, &sector, &track, &disk);
     args->arg1 = (void*)(long)sector;
     args->arg2 = (void*)(long)track;
     args->arg3 = (void*)(long)disk;
-    args->arg4 = (void*)(long)diskSizeReal(unit, &sector, &track, &disk);
     
     setUserMode();
 }
