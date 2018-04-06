@@ -298,7 +298,21 @@ int DiskDriver(char *arg){
 }
 
 void diskRead(USLOSS_Sysargs* sysArgs){
+    int unit = (int)(long)sysArgs->arg5,
+        track = (int)(long)sysArgs->arg3,
+        first = (int)(long)sysArgs->arg4,
+        sectors = (int)(long)sysArgs->arg2,
+        result;
+        
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("diskRead(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+        
+    result = diskReadReal(unit, track, first, sectors, sysArgs->arg1);
 
+    sysArgs->arg1 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
 int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
@@ -306,7 +320,16 @@ int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
 }
 
 void diskWrite(USLOSS_Sysargs* sysArgs){
-
+    int unit = (int)(long)sysArgs->arg5,
+        track = (int)(long)sysArgs->arg3,
+        first = (int)(long)sysArgs->arg4,
+        sectors = (int)(long)sysArgs->arg2,
+        result;
+        
+    result = diskWriteReal(unit, track, first, sectors, sysArgs->arg1);
+    
+    sysArgs->arg1 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
@@ -413,7 +436,14 @@ int TermReader(char *arg){
 }
 
 void termRead(USLOSS_Sysargs* sysArgs){
-
+    int unit = (int)(long)sysArgs->arg3,
+        size = (int)(long)sysArgs->arg2,
+        result;
+        
+    result = termReadReal(unit, size, sysArgs->arg1);
+    
+    sysArgs->arg2 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
 int termReadReal(int unit, int size, char *buffer){
@@ -429,7 +459,14 @@ int TermWriter(char *arg){
 }
 
 void termWrite(USLOSS_Sysargs* sysArgs){
-
+    int unit = (int)(long)sysArgs->arg3,
+        size = (int)(long)sysArgs->arg2,
+        result;
+        
+    result = termWriteReal(unit, size, sysArgs->arg1);
+    
+    sysArgs->arg2 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
 int termWriteReal(int unit, int size, char *text){
