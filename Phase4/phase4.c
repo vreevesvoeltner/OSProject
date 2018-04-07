@@ -43,8 +43,7 @@ void setUserMode();
 
 //int diskReadOrWriteReal(int, int, int, int, void *, int);
 
-void start3(void)
-{
+void start3(void){
     char    name[128],
             buf[10],
             filename[50];
@@ -114,6 +113,7 @@ void start3(void)
     // May be other stuff to do here before going on to terminal drivers
 /*
      for (i = 0; i < USLOSS_TERM_UNITS; i++){
+        //Initialize term mailboxes
         sprintf(buf, "%d", i); 
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
@@ -166,7 +166,6 @@ void start3(void)
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         
-        //TODO: Get mutex
         USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long) USLOSS_TERM_CTRL_RECV_INT(0));
         sprintf(filename, "term%d.in", i);
         f = fopen(filename, "a+");
@@ -313,6 +312,8 @@ void diskRead(USLOSS_Sysargs* sysArgs){
 
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
+    
+    setUserMode();
 }
 
 int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
@@ -326,10 +327,17 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
         sectors = (int)(long)sysArgs->arg2,
         result;
         
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("diskWrite(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+        
     result = diskWriteReal(unit, track, first, sectors, sysArgs->arg1);
     
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
+    
+    setUserMode();
 }
 
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
@@ -420,8 +428,13 @@ int TermDriver(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
         result = waitDevice(USLOSS_TERM_INT, unit, &status);
-        if (result != 0)
+        if (result != 0) /*process was zapped while waiting*/
             return 0;
+            
+        /*use MboxCondSend with chaWrite and charRead mailboxes to try
+          writing and reading. USLOSS_TERM_STAT_RECV gives status
+          for receiving and USLOSS_TERM_STAT_XMIT gives status
+          for sending. Use the unit to determine which mailboxes to use.*/
     }
     return 0;
 }
@@ -429,7 +442,7 @@ int TermDriver(char *arg){
 int TermReader(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
-        //Receive from this charReceive mailbox corresponding to this unit
+        //Receive from charRead mailbox corresponding to this unit
         //When a full line is read send it to the lineSend mailbox corresponding to this unit
     }
     return -1;
@@ -440,10 +453,17 @@ void termRead(USLOSS_Sysargs* sysArgs){
         size = (int)(long)sysArgs->arg2,
         result;
         
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("termRead(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+        
     result = termReadReal(unit, size, sysArgs->arg1);
     
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
+    
+    setUserMode();
 }
 
 int termReadReal(int unit, int size, char *buffer){
@@ -463,10 +483,17 @@ void termWrite(USLOSS_Sysargs* sysArgs){
         size = (int)(long)sysArgs->arg2,
         result;
         
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("termWrite(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+        
     result = termWriteReal(unit, size, sysArgs->arg1);
     
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
+    
+    setUserMode();
 }
 
 int termWriteReal(int unit, int size, char *text){
