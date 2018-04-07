@@ -1,3 +1,23 @@
+/* ------------------------------------------------------------------------
+phase4.c .
+Students:
+Veronica Reeves
+Thai Pham
+
+University of Arizona
+Computer Science 452
+
+Summary:
+Continue the implementation of the support level that was begun in phase
+3. All of the services in phase 4 will be requested by user programs 
+through the system call interface. For this phase, the support level will
+contain system driver processes to handle the pseudo-clock, terminal input,
+and disk I/O. These system processes run in kernel mode and with interrupts
+enabled. Similar to phase3, when an error occurs the operating system should 
+not crash when an error is made by a user-level process. Instead, the 
+offending process is terminated (not quit).
+------------------------------------------------------------------------ */
+
 #include <usloss.h>
 #include <usyscall.h>
 #include <phase1.h>
@@ -214,7 +234,13 @@ int ClockDriver(char *arg){
     }
     return 0;
 }
-
+/*
+Delays the calling process for the specified number of seconds (sleep).
+Input
+arg1: number of seconds to delay the process.
+Output
+arg4: -1 if illegal values are given as input; 0 otherwise.
+*/
 void sleep(USLOSS_Sysargs* sysArgs){
     if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
         USLOSS_Console("sleep(): in user mode. Halting...\n");
@@ -223,7 +249,13 @@ void sleep(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)(long)sleepReal((int)(long)sysArgs->arg1);
     setUserMode();
 }
-
+/*
+Causes the calling process to become unrunnable for at least the specified number of
+seconds, and not significantly longer. The seconds must be non-negative.
+Return values:
+-1: seconds is not valid
+0: otherwise
+*/
 int sleepReal(int secs){
     proc4Ptr current = &ProcTable[getpid() % MAXPROC];
     
@@ -315,10 +347,34 @@ void diskRead(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
+/*
+Reads sectors sectors from the disk indicated by unit, starting at track track and
+sector first. The sectors are copied into buffer. Your driver must handle a range of
+sectors specified by first and sectors that spans a track boundary (after reading the
+last sector in a track it should read the first sector in the next track). A file cannot wrap
+around the end of the disk.
+Return values:
+-1: invalid parameters
+0: sectors were read successfully
+>0: disk’s status register
+*/
 int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
     return -1;
 }
-
+/*
+Writes one or more sectors to the disk (diskWrite).
+Input
+arg1: the memory address from which to transfer.
+arg2: number of sectors to write.
+arg3: the starting disk track number.
+arg4: the starting disk sector number.
+arg5: the unit number of the disk to write.
+Output
+arg1: 0 if transfer was successful; the disk status register otherwise.
+arg4: -1 if illegal values are given as input; 0 otherwise.
+The arg4 result is only set to -1 if any of the input parameters are obviously invalid, e.g. the
+starting sector is negative.
+*/
 void diskWrite(USLOSS_Sysargs* sysArgs){
     int unit = (int)(long)sysArgs->arg5,
         track = (int)(long)sysArgs->arg3,
@@ -332,11 +388,30 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
 
+/*
+Writes sectors sectors to the disk indicated by unit, starting at track track and sector
+first. The contents of the sectors are read from buffer. Like diskRead, your driver
+must handle a range of sectors specified by first and sectors that spans a track
+boundary. A file cannot wrap around the end of the disk.
+Return values:
+-1: invalid parameters
+0: sectors were written successfully
+>0: disk’s status register
+*/
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
     
     return -1;
 }
-
+/*
+Returns information about the size of the disk (diskSize).
+Input
+arg1: the unit number of the disk
+Output
+arg1: size of a sector, in bytes
+arg2: number of sectors in a track
+arg3: number of tracks in the disk
+arg4: -1 if illegal values are given as input; 0 otherwise.
+*/
 void diskSize(USLOSS_Sysargs* args) {
     int unit = (long) args->arg1,
         sector,
@@ -354,7 +429,14 @@ void diskSize(USLOSS_Sysargs* args) {
     
     setUserMode();
 }
-
+/*
+Returns information about the size of the disk indicated by unit. The sector parameter
+is filled in with the number of bytes in a sector, track with the number of sectors in a
+track, and disk with the number of tracks in the disk.
+Return values:
+-1: invalid parameters
+0: disk size parameters returned successfully
+*/
 int diskSizeReal(int unit, int* sector, int* track, int* disk){
     proc4Ptr driver,
              current;
@@ -435,6 +517,16 @@ int TermReader(char *arg){
     return -1;
 }
 
+/*
+Read a line from a terminal (termRead).
+Input
+arg1: address of the user’s line buffer.
+arg2: maximum size of the buffer.
+arg3: the unit number of the terminal from which to read.
+Output
+arg2: number of characters read.
+arg4: -1 if illegal values are given as input; 0 otherwise.
+*/
 void termRead(USLOSS_Sysargs* sysArgs){
     int unit = (int)(long)sysArgs->arg3,
         size = (int)(long)sysArgs->arg2,
@@ -449,7 +541,16 @@ void termRead(USLOSS_Sysargs* sysArgs){
 int termReadReal(int unit, int size, char *buffer){
     return -1;
 }
-
+/*
+Write a line to a terminal (termWrite).
+Input
+arg1: address of the user’s line buffer.
+arg2: number of characters to write.
+arg3: the unit number of the terminal to which to write.
+Output
+arg2: number of characters written.
+arg4: -1 if illegal values are given as input; 0 otherwise.
+*/
 int TermWriter(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
@@ -468,7 +569,14 @@ void termWrite(USLOSS_Sysargs* sysArgs){
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
-
+/*This routine writes size characters — a line of text pointed to by text to the terminal
+indicated by unit. A newline is not automatically appended, so if one is needed it must
+be included in the text to be written. This routine should not return until the text has been
+written to the terminal.
+Return values:
+-1: invalid parameters
+>0: number of characters written
+*/
 int termWriteReal(int unit, int size, char *text){
     return -1;
 }
