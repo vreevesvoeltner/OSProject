@@ -3,6 +3,8 @@
 
 #define DEBUG4 0
 
+#include <string.h>
+
 typedef struct proc4 proc4;
 typedef struct proc4 *proc4Ptr;
 
