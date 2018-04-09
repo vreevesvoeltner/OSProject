@@ -854,7 +854,33 @@ int TermWriter(char *arg){
     
     semvReal(semRunning);
     while (!isZapped()){
-        continue;
+        lineSize = MboxReceive(lineWrite[unit], line, MAXLINE);
+        
+        if (isZapped())
+            break;
+        
+        ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
+
+        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+        
+        for (i = 0; i < lineSize; i++){
+            MboxReceive(charWrite[unit], &devStatus, sizeof(int));
+
+            if (USLOSS_TERM_STAT_XMIT(devStatus) == USLOSS_DEV_READY) {
+                ctrl = 0;
+                ctrl = USLOSS_TERM_CTRL_CHAR(0, line[i]);
+                ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
+                ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
+
+                USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+            }
+        }
+        if (interruptsEnabled[unit] == 1) 
+            ctrl = USLOSS_TERM_CTRL_RECV_INT(0);
+        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long) ctrl);
+        interruptsEnabled[unit] = 0; 
+        MboxReceive(writeProc[unit], &pid, sizeof(int));
+        semvReal(ProcTable[pid % MAXPROC].waitSem);
     }
     return 0;
 }
