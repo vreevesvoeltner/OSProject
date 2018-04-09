@@ -20,7 +20,6 @@ struct proc4{
         track,
         sleepTime,  // Time when the process should wake up
         waitSem;    // Use to block processes from continuing
-	void 		  *buffer;// disk buffer 
     proc4Ptr nextProcPtr,
              nextDiskPtr,
 			 prevDiskPtr, // TP

@@ -391,7 +391,7 @@ int DiskDriver(char *arg){
                 while(dCurrs[unit]->sectors > 0){
                     USLOSS_DeviceRequest request;
                     request.opr = USLOSS_DISK_SEEK;
-                    request.reg1 = &track;
+                    request.reg1 = track;
                     r = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
                     if (warningGAW==1) {
                         USLOSS_Console("%d get way from warning unused variable\n", r);
