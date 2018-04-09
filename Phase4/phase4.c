@@ -39,17 +39,17 @@ proc4 ProcTable[MAXPROC];
 
 proc4Ptr sleepLst = NULL;
 
-/*    
-    we use circular algorithm to decide which 
-    is the next process will read/write. It means 
-    that we need to move forward from the "current"
-    we are at. There are 2 case: 
-        - The new added process requests read track 
-          that => current reading track. 
-        - The new added process requests read the track 
-          that < the current reading track
-    So, we need to keep track of current track and the 
-    process has smallest track in the diskLst
+/*	
+	we use circular algorithm to decide which 
+	is the next process will read/write. It means 
+	that we need to move forward from the "current"
+	we are at. There are 2 case: 
+		- The new added process requests read track 
+		  that => current reading track. 
+		- The new added process requests read the track 
+		  that < the current reading track
+	So, we need to keep track of current track and the 
+	process has smallest track in the diskLst
 */
 //proc4Ptr diskLst[USLOSS_DISK_UNITS];
 diskList diskLst [USLOSS_DISK_UNITS];
@@ -146,11 +146,14 @@ void start3(void)
 
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
         sprintf(buf, "%d", i);
-        diskPID[i] = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
+        pid = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
         if (diskPID[i] < 0) {
             USLOSS_Console("start3(): Can't create disk driver\n");
             USLOSS_Halt(1);
         }
+		
+		//USLOSS_Console("======>pid:%d\n",pid);
+		diskPID[i] = pid;
         //ProcTable[diskPID[i] % MAXPROC].pid = diskPID[i];
         //diskLst[i] = NULL;
         sempReal(semRunning);
@@ -176,20 +179,16 @@ void start3(void)
             USLOSS_Halt(1);
         }
         ProcTable[termPID[i][0] % MAXPROC].pid = termPID[i][0];
-        ProcTable[termPID[i][0] % MAXPROC].unit = i;
         sempReal(semRunning);
         
-        sprintf(name, "term%d reader", i);
         termPID[i][1] = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][1] < 0) {
             USLOSS_Console("start3(): Can't create term reader\n");
             USLOSS_Halt(1);
         }
         ProcTable[termPID[i][1] % MAXPROC].pid = termPID[i][1];
-        ProcTable[termPID[i][1] % MAXPROC].unit = i;
         sempReal(semRunning);
         
-        sprintf(name, "term%d writer", i);
         termPID[i][2] = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][2] < 0) {
             USLOSS_Console("start3(): Can't create term writer\n");
@@ -257,7 +256,7 @@ int ClockDriver(char *arg){
     // Let the parent know we are running and enable interrupts.
     semvReal(semRunning);
     int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-    if (warningGAW==1) {
+	if (warningGAW==1) {
         USLOSS_Console("%d get way from warning unused variable\n", r);
     }
     // Infinite loop until we are zap'd
@@ -344,15 +343,15 @@ int DiskDriver(char *arg){
     int unit = atoi((char*)arg),
         result,
         status;
-    proc4Ptr me = &ProcTable[getpid() % MAXPROC];
-    initProc(getpid()%MAXPROC);
-    diskLst[unit].head = NULL;
-    diskLst[unit].tail = NULL;
-    diskLst[unit].size = 0;
-    
+	proc4Ptr me = &ProcTable[getpid() % MAXPROC];
+	initProc(getpid()%MAXPROC);
+	diskLst[unit].head = NULL;
+	diskLst[unit].tail = NULL;
+	diskLst[unit].size = 0;
+	
     semvReal(semRunning);
-    int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-    if (warningGAW==1) {
+	int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+	if (warningGAW==1) {
         USLOSS_Console("%d get way from warning unused variable\n", r);
     }
     while (!isZapped()){
@@ -361,62 +360,62 @@ int DiskDriver(char *arg){
             return 0;
         
         if (diskLst[unit].size > 0){
-            proc4Ptr temp;
-            // peek current track  
-            if (dCurrs[unit] == NULL){ // first time seeking 
-                dCurrs[unit] = diskLst[unit].head;
-            }
-            temp = dCurrs[unit];
-            int track = dCurrs[unit]->track;
-            
-            // Case1: Tracks request
+			proc4Ptr temp;
+			// peek current track  
+			if (dCurrs[unit] == NULL){ // first time seeking 
+				dCurrs[unit] = diskLst[unit].head;
+			}
+			temp = dCurrs[unit];
+			int track = dCurrs[unit]->track;
+			
+			// Case1: Tracks request
             if (dCurrs[unit]->request.opr == USLOSS_DISK_TRACKS){
-                r =  USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
-                if (warningGAW==1) {
-                    USLOSS_Console("%d get way from warning unused variable\n", r);
-                }
+				r =  USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
+				if (warningGAW==1) {
+					USLOSS_Console("%d get way from warning unused variable\n", r);
+				}
                 result = waitDevice(USLOSS_DISK_DEV, unit, &status);
                 if (result != 0) {
                     return 0;
                 }
             }else{//Case2: reading and writing
-                while(dCurrs[unit]->sectors > 0){
-                    USLOSS_DeviceRequest request;
+				while(dCurrs[unit]->sectors > 0){
+					USLOSS_DeviceRequest request;
                     request.opr = USLOSS_DISK_SEEK;
                     request.reg1 = &track;
                     r = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
-                    if (warningGAW==1) {
-                        USLOSS_Console("%d get way from warning unused variable\n", r);
-                    }
-                    // Wait for the interrupt to occur
+					if (warningGAW==1) {
+						USLOSS_Console("%d get way from warning unused variable\n", r);
+					}
+					// Wait for the interrupt to occur
                     result = waitDevice(USLOSS_DISK_DEV, unit, &status);  
                     if (result != 0) {
                         return 0;
                     }
-                    int fSec; 
-                    for (fSec= dCurrs[unit]->firstSector; dCurrs[unit]->sectors > 0 && fSec < USLOSS_DISK_TRACK_SIZE; fSec++) {
+					int fSec; 
+					for (fSec= dCurrs[unit]->firstSector; dCurrs[unit]->sectors > 0 && fSec < USLOSS_DISK_TRACK_SIZE; fSec++) {
                         dCurrs[unit]->request.reg1 = (void *) ((long) fSec);
                         r  = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
                         if (warningGAW==1) {
-                            USLOSS_Console("%d get way from warning unused variable\n", r);
-                        }
-                        result = waitDevice(USLOSS_DISK_DEV, unit, &status);
+							USLOSS_Console("%d get way from warning unused variable\n", r);
+						}
+						result = waitDevice(USLOSS_DISK_DEV, unit, &status);
                         if (result != 0) {
                             return 0;
                         }
                         dCurrs[unit]->sectors--;
                         dCurrs[unit]->request.reg2 += USLOSS_DISK_SECTOR_SIZE;
                     }
-                    track++;
-                    dCurrs[unit]->firstSector = 0;
-                }
+					track++;
+					dCurrs[unit]->firstSector = 0;
+				}
             }
-            // remove executed process from diskList
-            removeDisk(&diskLst[unit],unit);
-            semvReal(temp->waitSem);
+			// remove executed process from diskList
+			removeDisk(&diskLst[unit],unit);
+			semvReal(temp->waitSem);
         }
     }
-    semvReal(semRunning);
+	semvReal(semRunning);
     return 0;
 }
 
@@ -436,7 +435,7 @@ void diskRead(USLOSS_Sysargs* sysArgs){
 
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    setUserMode();
+	setUserMode();
 }
 
 /*
@@ -451,7 +450,7 @@ Return values:
 >0: disk’s status register
 */
 int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
-     proc4Ptr driver,
+	 proc4Ptr driver,
              current;
    // check for illegal args
     if (unit < 0 || unit > 1 || track < 0 || track > ProcTable[diskPID[unit]].track ||
@@ -459,56 +458,56 @@ int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
         (first + sectors)/USLOSS_DISK_TRACK_SIZE + track > ProcTable[diskPID[unit]].track) {
         return -1;
     }
-    
-    driver = &ProcTable[diskPID[unit]];
-    
-    current = &ProcTable[getpid() % MAXPROC];
+	
+	driver = &ProcTable[diskPID[unit]];
+	
+	current = &ProcTable[getpid() % MAXPROC];
     if (current->pid != getpid()){
        initProc(getpid() % MAXPROC);
         current->pid = getpid();
     }
-    
-    current->request.opr = USLOSS_DISK_READ;
-    current->request.reg2 = buffer;
-    current->sectors = sectors;
-    current->track = track;
-    current->firstSector = first;
-    
-    // add to diskLst request 
-    if (diskLst[unit].head == NULL) { 
-        diskLst[unit].head = diskLst[unit].tail = current;
-        diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
-        diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
-    }
-    else {
-        proc4Ptr prev = diskLst[unit].tail;
-        proc4Ptr next = diskLst[unit].head;
-        while (next != NULL && next->track <= current->track) {
-            prev = next;
-            next = next->nextDiskPtr;
-            if (next == diskLst[unit].head)
-                break;
-        }
-        prev->nextDiskPtr = current;
-        current->prevDiskPtr = prev;
-        if (next == NULL)
-            next = diskLst[unit].head;
-        current->nextDiskPtr = next;
-        next->prevDiskPtr = current;
-        if (current->track < diskLst[unit].head->track)
-            diskLst[unit].head = current; 
-        if (current->track>=diskLst[unit].tail->track)
-            diskLst[unit].tail = current; 
-    }
-    diskLst[unit].size++;
-    
-        
-    //=======================
-    semvReal(driver->waitSem);  // wake up disk driver
+	
+	current->request.opr = USLOSS_DISK_READ;
+	current->request.reg2 = buffer;
+	current->sectors = sectors;
+	current->track = track;
+	current->firstSector = first;
+	
+	// add to diskLst request 
+	if (diskLst[unit].head == NULL) { 
+		diskLst[unit].head = diskLst[unit].tail = current;
+		diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+		diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+	}
+	else {
+		proc4Ptr prev = diskLst[unit].tail;
+		proc4Ptr next = diskLst[unit].head;
+		while (next != NULL && next->track <= current->track) {
+			prev = next;
+			next = next->nextDiskPtr;
+			if (next == diskLst[unit].head)
+				break;
+		}
+		prev->nextDiskPtr = current;
+		current->prevDiskPtr = prev;
+		if (next == NULL)
+			next = diskLst[unit].head;
+		current->nextDiskPtr = next;
+		next->prevDiskPtr = current;
+		if (current->track < diskLst[unit].head->track)
+			diskLst[unit].head = current; 
+		if (current->track>=diskLst[unit].tail->track)
+			diskLst[unit].tail = current; 
+	}
+	diskLst[unit].size++;
+	
+		
+	//=======================
+	semvReal(driver->waitSem);  // wake up disk driver
     sempReal(current->waitSem); // block current 
-    int st;
+	int st;
     int result = USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, &st);
-    
+	
     return result;
 }
 /*
@@ -536,7 +535,7 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
     
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    setUserMode();
+	setUserMode();
 }
 
 /*
@@ -550,7 +549,7 @@ Return values:
 >0: disk’s status register
 */
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
-        proc4Ptr driver,
+   	 proc4Ptr driver,
              current;
    // check for illegal args
     if (unit < 0 || unit > 1 || track < 0 || track > ProcTable[diskPID[unit]].track ||
@@ -558,56 +557,56 @@ int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
         (first + sectors)/USLOSS_DISK_TRACK_SIZE + track > ProcTable[diskPID[unit]].track) {
         return -1;
     }
-    
-    driver = &ProcTable[diskPID[unit]];
-    
-    current = &ProcTable[getpid() % MAXPROC];
+	
+	driver = &ProcTable[diskPID[unit]];
+	
+	current = &ProcTable[getpid() % MAXPROC];
     if (current->pid != getpid()){
        initProc(getpid() % MAXPROC);
         current->pid = getpid();
     }
-    
-    current->request.opr = USLOSS_DISK_WRITE;
-    current->request.reg2 = buffer;
-    current->sectors = sectors;
-    current->track = track;
-    current->firstSector = first;
-    
-    // add to diskLst request 
-    if (diskLst[unit].head == NULL) { 
-        diskLst[unit].head = diskLst[unit].tail = current;
-        diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
-        diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
-    }
-    else {
-        proc4Ptr prev = diskLst[unit].tail;
-        proc4Ptr next = diskLst[unit].head;
-        while (next != NULL && next->track <= current->track) {
-            prev = next;
-            next = next->nextDiskPtr;
-            if (next == diskLst[unit].head)
-                break;
-        }
-        prev->nextDiskPtr = current;
-        current->prevDiskPtr = prev;
-        if (next == NULL)
-            next = diskLst[unit].head;
-        current->nextDiskPtr = next;
-        next->prevDiskPtr = current;
-        if (current->track < diskLst[unit].head->track)
-            diskLst[unit].head = current; 
-        if (current->track>=diskLst[unit].tail->track)
-            diskLst[unit].tail = current; 
-    }
-    diskLst[unit].size++;
-    
-        
-    //=======================
-    semvReal(driver->waitSem);  // wake up disk driver
+	
+	current->request.opr = USLOSS_DISK_WRITE;
+	current->request.reg2 = buffer;
+	current->sectors = sectors;
+	current->track = track;
+	current->firstSector = first;
+	
+	// add to diskLst request 
+	if (diskLst[unit].head == NULL) { 
+		diskLst[unit].head = diskLst[unit].tail = current;
+		diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+		diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+	}
+	else {
+		proc4Ptr prev = diskLst[unit].tail;
+		proc4Ptr next = diskLst[unit].head;
+		while (next != NULL && next->track <= current->track) {
+			prev = next;
+			next = next->nextDiskPtr;
+			if (next == diskLst[unit].head)
+				break;
+		}
+		prev->nextDiskPtr = current;
+		current->prevDiskPtr = prev;
+		if (next == NULL)
+			next = diskLst[unit].head;
+		current->nextDiskPtr = next;
+		next->prevDiskPtr = current;
+		if (current->track < diskLst[unit].head->track)
+			diskLst[unit].head = current; 
+		if (current->track>=diskLst[unit].tail->track)
+			diskLst[unit].tail = current; 
+	}
+	diskLst[unit].size++;
+	
+		
+	//=======================
+	semvReal(driver->waitSem);  // wake up disk driver
     sempReal(current->waitSem); // block current 
-    int st;
+	int st;
     int result = USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, &st);
-    
+	
     return result;
 }
 /*
@@ -675,7 +674,7 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
         r.reg1 = &driver->track;
         current->request = r;
         
-        /*
+		/*
         if (diskLst[unit] == NULL){
             diskLst[unit] = current;
         }else{
@@ -692,35 +691,35 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
             }
         }
         */
-        
-        // ==================================
-        if (diskLst[unit].head == NULL) { 
-            diskLst[unit].head = diskLst[unit].tail = current;
-            diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
-            diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
-        }
-        else {
-            proc4Ptr prev = diskLst[unit].tail;
-            proc4Ptr next = diskLst[unit].head;
-            while (next != NULL && next->track <= current->track) {
-                prev = next;
-                next = next->nextDiskPtr;
-                if (next == diskLst[unit].head)
-                    break;
-            }
-            prev->nextDiskPtr = current;
-            current->prevDiskPtr = prev;
-            if (next == NULL)
-                next = diskLst[unit].head;
-            current->nextDiskPtr = next;
-            next->prevDiskPtr = current;
-            if (current->track < diskLst[unit].head->track)
-                diskLst[unit].head = current; 
-            if (current->track>=diskLst[unit].tail->track)
-                diskLst[unit].tail = current; 
-        }
-        diskLst[unit].size++;
-        //====================================
+		
+		// ==================================
+		if (diskLst[unit].head == NULL) { 
+			diskLst[unit].head = diskLst[unit].tail = current;
+			diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+			diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+		}
+		else {
+			proc4Ptr prev = diskLst[unit].tail;
+			proc4Ptr next = diskLst[unit].head;
+			while (next != NULL && next->track <= current->track) {
+				prev = next;
+				next = next->nextDiskPtr;
+				if (next == diskLst[unit].head)
+					break;
+			}
+			prev->nextDiskPtr = current;
+			current->prevDiskPtr = prev;
+			if (next == NULL)
+				next = diskLst[unit].head;
+			current->nextDiskPtr = next;
+			next->prevDiskPtr = current;
+			if (current->track < diskLst[unit].head->track)
+				diskLst[unit].head = current; 
+			if (current->track>=diskLst[unit].tail->track)
+				diskLst[unit].tail = current; 
+		}
+		diskLst[unit].size++;
+		//====================================
         semvReal(driver->waitSem);
         sempReal(current->waitSem);
     }
@@ -733,7 +732,7 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
 }
 
 int TermDriver(char *arg){
-    int unit = atoi(arg),
+    int unit = atoi((char*)arg),
         status,
         devStatus,
         result;
@@ -743,7 +742,6 @@ int TermDriver(char *arg){
         result = waitDevice(USLOSS_TERM_INT, unit, &status);
         if (result != 0) /*process was zapped while waiting*/
             return 0;
-            
         /*use MboxCondSend with chaWrite and charRead mailboxes to try
           writing and reading. USLOSS_TERM_STAT_RECV gives status
           for receiving and USLOSS_TERM_STAT_XMIT gives status
@@ -793,7 +791,7 @@ int TermReader(char *arg){
 /*
 Read a line from a terminal (termRead).
 Input
-arg1: address of the user?s line buffer.
+arg1: address of the user’s line buffer.
 arg2: maximum size of the buffer.
 arg3: the unit number of the terminal from which to read.
 Output
@@ -838,7 +836,7 @@ int termReadReal(int unit, int size, char *buffer){
 /*
 Write a line to a terminal (termWrite).
 Input
-arg1: address of the user?s line buffer.
+arg1: address of the user’s line buffer.
 arg2: number of characters to write.
 arg3: the unit number of the terminal to which to write.
 Output
@@ -856,33 +854,7 @@ int TermWriter(char *arg){
     
     semvReal(semRunning);
     while (!isZapped()){
-        lineSize = MboxReceive(lineWrite[unit], line, MAXLINE);
-        
-        if (isZapped())
-            break;
-        
-        ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
-
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
-        
-        for (i = 0; i < lineSize; i++){
-            MboxReceive(charWrite[unit], &devStatus, sizeof(int));
-
-            if (USLOSS_TERM_STAT_XMIT(devStatus) == USLOSS_DEV_READY) {
-                ctrl = 0;
-                ctrl = USLOSS_TERM_CTRL_CHAR(0, line[i]);
-                ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
-                ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
-
-                USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
-            }
-        }
-        if (interruptsEnabled[unit] == 1) 
-            ctrl = USLOSS_TERM_CTRL_RECV_INT(0);
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long) ctrl);
-        interruptsEnabled[unit] = 0; 
-        MboxReceive(writeProc[unit], &pid, sizeof(int));
-        semvReal(ProcTable[pid % MAXPROC].waitSem);
+        continue;
     }
     return 0;
 }
@@ -897,7 +869,7 @@ void termWrite(USLOSS_Sysargs* sysArgs){
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 }
-/*This routine writes size characters ? a line of text pointed to by text to the terminal
+/*This routine writes size characters — a line of text pointed to by text to the terminal
 indicated by unit. A newline is not automatically appended, so if one is needed it must
 be included in the text to be written. This routine should not return until the text has been
 written to the terminal.
@@ -928,24 +900,23 @@ void initProc(int i){
     proc4Ptr current = &ProcTable[i];
     
     current->pid = -1;
-    current->unit = -1;
-    current->firstSector = -1;
-    current->sectors = -1;
+	current->firstSector = -1;
+	current->sectors = -1;
     current->track = -1;
     current->waitSem = semcreateReal(0);
     current->sleepTime = -1;
     current->nextProcPtr = NULL;
     current->nextDiskPtr = NULL;
-    current->prevDiskPtr = NULL;
+	current->prevDiskPtr = NULL;
     current->nextSleepPtr = NULL;
 }
 
 int getTime(){
     int currentTime;
     int r = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
-    if (warningGAW==1) {
-        USLOSS_Console("%d get way from warning unused variable\n", r);
-    }
+	if (warningGAW==1) {
+		USLOSS_Console("%d get way from warning unused variable\n", r);
+	}
     return currentTime;
 }
 
@@ -961,7 +932,7 @@ void setUserMode(){
 }
 
 proc4Ptr removeDisk(diskList* ld,int unit){
-    if (ld->size == 0)
+	if (ld->size == 0)
         return NULL;
 
     if (dCurrs[unit] == NULL) {
