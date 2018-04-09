@@ -29,6 +29,8 @@ offending process is terminated (not quit).
 #include <libuser.h>
 #include <stdio.h>
 #include <stdlib.h> /* needed for atoi() */
+#include <stdio.h>
+#include <string.h>
 
 int warningGAW = 0;
 int  semRunning,
@@ -234,7 +236,11 @@ void start3(void)
         join(&status);
         
         // Zap TermDriver
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+        int r = USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+		
+		if (warningGAW==1) {
+        USLOSS_Console("%d,get way from warning unused variable\n",r);
+		}
         sprintf(filename, "term%d.in", i);
         f = fopen(filename, "a+");
         fprintf(f, "last line\n");
@@ -822,7 +828,10 @@ int termReadReal(int unit, int size, char *buffer){
         return -1;
     
     if (!interruptsEnabled[unit]) {
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+		int r = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+		if (warningGAW==1) {
+        USLOSS_Console("%d,get way from warning unused variable\n",r);
+		}
         interruptsEnabled[unit] = 1;
     }
     
@@ -861,7 +870,10 @@ int TermWriter(char *arg){
         
         ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
 
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+        int r = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+		if (warningGAW==1) {
+        USLOSS_Console("%d,get way from warning unused variable\n",r);
+		}
         
         for (i = 0; i < lineSize; i++){
             MboxReceive(charWrite[unit], &devStatus, sizeof(int));
@@ -872,12 +884,18 @@ int TermWriter(char *arg){
                 ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
                 ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
 
-                USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+               r =  USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
+			   if (warningGAW==1) {
+					USLOSS_Console("%d,get way from warning unused variable\n",r);
+				}
             }
         }
         if (interruptsEnabled[unit] == 1) 
             ctrl = USLOSS_TERM_CTRL_RECV_INT(0);
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long) ctrl);
+        r = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long) ctrl);
+		if (warningGAW==1) {
+			USLOSS_Console("%d,get way from warning unused variable\n",r);
+		}
         interruptsEnabled[unit] = 0; 
         MboxReceive(writeProc[unit], &pid, sizeof(int));
         semvReal(ProcTable[pid % MAXPROC].waitSem);
