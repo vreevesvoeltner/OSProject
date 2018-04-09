@@ -54,6 +54,15 @@ proc4Ptr sleepLst = NULL;
 //proc4Ptr diskLst[USLOSS_DISK_UNITS];
 diskList diskLst [USLOSS_DISK_UNITS];
 proc4Ptr dCurrs[USLOSS_DISK_UNITS]; // Current read/write positions 
+
+// Terminal mailboxes and controls
+int  charRead[USLOSS_TERM_UNITS],
+     charWrite[USLOSS_TERM_UNITS],
+     lineRead[USLOSS_TERM_UNITS],
+     lineWrite[USLOSS_TERM_UNITS],
+     writeProc[USLOSS_TERM_UNITS],
+     interruptsEnabled[USLOSS_TERM_UNITS];
+
 //==============
 int ClockDriver(char *);
 int DiskDriver(char *);
@@ -150,13 +159,17 @@ void start3(void)
     }
 
     // May be other stuff to do here before going on to terminal drivers
-/*
+
      for (i = 0; i < USLOSS_TERM_UNITS; i++){
+        //Initialize term mailboxes
+        charRead[i] = MboxCreate(1, MAXLINE);
+        charWrite[i] = MboxCreate(1, MAXLINE);
+        lineRead[i] = MboxCreate(10, MAXLINE);
+        lineWrite[i] = MboxCreate(10, MAXLINE);
+        writeProc[i] = MboxCreate(1, sizeof(int));
+        interruptsEnabled[i] = 0;
+
         sprintf(buf, "%d", i); 
-<<<<<<< HEAD
-        sprintf(name, "term%d driver", i);
-=======
->>>>>>> be87469661af3d867c32c64f30c9287cb149aa0f
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
             USLOSS_Console("start3(): Can't create term driver\n");
@@ -185,7 +198,7 @@ void start3(void)
         ProcTable[termPID[i][2] % MAXPROC].pid = termPID[i][2];
         sempReal(semRunning);
      }
-*/
+
     /*
      * Create first user-level process and wait for it to finish.
      * These are lower-case because they are not system calls;
@@ -207,26 +220,31 @@ void start3(void)
         zap(diskPID[i]);
         join(&status);
     }
-/*   
+  
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         
-        //TODO: Get mutex
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long) USLOSS_TERM_CTRL_RECV_INT(0));
+        // Zap TermReader
+        MboxSend(charRead[i], NULL, 0);
+        zap(termPID[i][1]);
+        join(&status);
+        
+        // Zap TermWriter
+        MboxSend(lineWrite[i], NULL, 0);
+        zap(termPID[i][2]);
+        join(&status);
+        
+        // Zap TermDriver
+        USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long)USLOSS_TERM_CTRL_RECV_INT(0));
         sprintf(filename, "term%d.in", i);
         f = fopen(filename, "a+");
         fprintf(f, "last line\n");
         fflush(f);
         fclose(f);
-        
         zap(termPID[i][0]);
         join(&status);
-        zap(termPID[i][1]);
-        join(&status);
-        zap(termPID[i][2]);
-        join(&status);
     }
-*/
+
     // eventually, at the end:
     quit(0);
     
@@ -717,13 +735,15 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
 int TermDriver(char *arg){
     int unit = atoi(arg),
         status,
+        devStatus,
         result;
     
     semvReal(semRunning);
     while (!isZapped()){
         result = waitDevice(USLOSS_TERM_INT, unit, &status);
-        if (result != 0)
+        if (result != 0) /*process was zapped while waiting*/
             return 0;
+            
         /*use MboxCondSend with chaWrite and charRead mailboxes to try
           writing and reading. USLOSS_TERM_STAT_RECV gives status
           for receiving and USLOSS_TERM_STAT_XMIT gives status
@@ -749,12 +769,25 @@ int TermDriver(char *arg){
 }
 
 int TermReader(char *arg){
+    int unit = atoi((char*)arg),
+        intIn,
+        i = 0;
+    char line[MAXLINE];
+    
     semvReal(semRunning);
     while (!isZapped()){
-        //Receive from this charReceive mailbox corresponding to this unit
-        //When a full line is read send it to the lineSend mailbox corresponding to this unit
+        MboxReceive(charRead[unit], &intIn, sizeof(int));
+        line[i] = USLOSS_TERM_STAT_CHAR(intIn);
+        i++;
+        if (line[i-1] == '\n' || i == MAXLINE){
+            line[i] = '\0';
+            
+            MboxSend(lineRead[unit], line, i);
+            i = 0;
+        }
     }
-    return -1;
+    return 0;
+
 }
 
 /*
@@ -813,6 +846,14 @@ arg2: number of characters written.
 arg4: -1 if illegal values are given as input; 0 otherwise.
 */
 int TermWriter(char *arg){
+    int unit = atoi((char*)arg),
+        lineSize,
+        devStatus,
+        ctrl = 0,
+        pid,
+        i = 0;
+    char line[MAXLINE];
+    
     semvReal(semRunning);
     while (!isZapped()){
         lineSize = MboxReceive(lineWrite[unit], line, MAXLINE);
@@ -843,7 +884,7 @@ int TermWriter(char *arg){
         MboxReceive(writeProc[unit], &pid, sizeof(int));
         semvReal(ProcTable[pid % MAXPROC].waitSem);
     }
-    return -1;
+    return 0;
 }
 
 void termWrite(USLOSS_Sysargs* sysArgs){
@@ -865,7 +906,22 @@ Return values:
 >0: number of characters written
 */
 int termWriteReal(int unit, int size, char *text){
-    return -1;
+    int pid;
+    
+    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
+        USLOSS_Console("termWrite(): in user mode. Halting...\n");
+        USLOSS_Halt(1);
+    }
+    
+    if (unit < 0 || unit > USLOSS_TERM_UNITS - 1 || size < 0)
+        return -1;
+        
+    pid = getpid();
+    MboxSend(writeProc[unit], &pid, sizeof(int));
+    
+    MboxSend(lineWrite[unit], text, size);
+    sempReal(ProcTable[pid % MAXPROC].waitSem);
+    return size;
 }
 
 void initProc(int i){
@@ -942,39 +998,3 @@ proc4Ptr removeDisk(diskList* ld,int unit){
 
     return temp;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
