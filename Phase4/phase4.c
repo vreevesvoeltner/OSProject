@@ -30,15 +30,31 @@ offending process is terminated (not quit).
 #include <stdio.h>
 #include <stdlib.h> /* needed for atoi() */
 
+int warningGAW = 0;
 int  semRunning,
      diskPID[USLOSS_DISK_UNITS],
      termPID[USLOSS_TERM_UNITS][3];
 
 proc4 ProcTable[MAXPROC];
 
-proc4Ptr sleepLst = NULL,
-         diskLst[USLOSS_DISK_UNITS];
+proc4Ptr sleepLst = NULL;
 
+/*	
+	we use circular algorithm to decide which 
+	is the next process will read/write. It means 
+	that we need to move forward from the "current"
+	we are at. There are 2 case: 
+		- The new added process requests read track 
+		  that => current reading track. 
+		- The new added process requests read the track 
+		  that < the current reading track
+	So, we need to keep track of current track and the 
+	process has smallest track in the diskLst
+*/
+//proc4Ptr diskLst[USLOSS_DISK_UNITS];
+diskList diskLst [USLOSS_DISK_UNITS];
+proc4Ptr dCurrs[USLOSS_DISK_UNITS]; // Current read/write positions 
+//==============
 int ClockDriver(char *);
 int DiskDriver(char *);
 int TermDriver(char *);
@@ -53,6 +69,7 @@ void diskWrite(USLOSS_Sysargs*);
 int diskWriteReal(int, int, int, int, void *);
 void diskSize(USLOSS_Sysargs*);
 int diskSizeReal(int, int*, int*, int*);
+proc4Ptr removeDisk(diskList*,int);
 void termRead(USLOSS_Sysargs*);
 int termReadReal(int, int, char *);
 void termWrite(USLOSS_Sysargs*);
@@ -63,20 +80,23 @@ void setUserMode();
 
 //int diskReadOrWriteReal(int, int, int, int, void *, int);
 
-void start3(void){
+void start3(void)
+{
     char    name[128],
             buf[10],
             filename[50];
-    int     i,
-            pid,
-            clockPID,
-            status,
-            tempSec,
-            tempTrack;
+    int     i = -1,
+            pid= -1,
+            clockPID = -1,
+            status= - 1,
+            tempSec = -1,
+            tempTrack= -1;
     /*
      * Check kernel mode here.
      */
-     
+    if (warningGAW==1) {
+        USLOSS_Console("%d,%d%d%d%d%d%s%s%s get way from warning unused variable\n", i,pid,clockPID,status,tempSec,tempTrack,name[128],buf[10],filename[50]);
+    }
      
     systemCallVec[SYS_SLEEP] = sleep;
     systemCallVec[SYS_DISKREAD] = diskRead;
@@ -123,8 +143,8 @@ void start3(void){
             USLOSS_Console("start3(): Can't create disk driver\n");
             USLOSS_Halt(1);
         }
-        ProcTable[diskPID[i] % MAXPROC].pid = diskPID[i];
-        diskLst[i] = NULL;
+        //ProcTable[diskPID[i] % MAXPROC].pid = diskPID[i];
+        //diskLst[i] = NULL;
         sempReal(semRunning);
         
         diskSizeReal(i, &tempSec, &tempTrack, &ProcTable[diskPID[i] % MAXPROC].track);
@@ -133,7 +153,6 @@ void start3(void){
     // May be other stuff to do here before going on to terminal drivers
 /*
      for (i = 0; i < USLOSS_TERM_UNITS; i++){
-        //Initialize term mailboxes
         sprintf(buf, "%d", i); 
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
@@ -186,6 +205,7 @@ void start3(void){
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         
+        //TODO: Get mutex
         USLOSS_DeviceOutput(USLOSS_TERM_DEV, i, (void *)(long) USLOSS_TERM_CTRL_RECV_INT(0));
         sprintf(filename, "term%d.in", i);
         f = fopen(filename, "a+");
@@ -212,8 +232,10 @@ int ClockDriver(char *arg){
 
     // Let the parent know we are running and enable interrupts.
     semvReal(semRunning);
-    USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
-
+    int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+	if (warningGAW==1) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
     // Infinite loop until we are zap'd
     while(! isZapped()) {
         result = waitDevice(USLOSS_CLOCK_DEV, 0, &status);
@@ -298,33 +320,79 @@ int DiskDriver(char *arg){
     int unit = atoi((char*)arg),
         result,
         status;
-    
+	proc4Ptr me = &ProcTable[getpid() % MAXPROC];
+	initProc(getpid()%MAXPROC);
+	diskLst[unit].head = NULL;
+	diskLst[unit].tail = NULL;
+	diskLst[unit].size = 0;
+	
     semvReal(semRunning);
+	int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
+	if (warningGAW==1) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
     while (!isZapped()){
-        sempReal(ProcTable[getpid() % MAXPROC].waitSem);
+        sempReal(me->waitSem);
         if (isZapped())
-            break;
-            
-        if (diskLst[unit] != NULL){
-            proc4Ptr current = diskLst[unit];
-            diskLst[unit] = current->nextDiskPtr;
-            current->nextDiskPtr = NULL;
-            
-            if (current->request.opr == USLOSS_DISK_TRACKS){
-                USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &current->request);
+            return 0;
+        
+        if (diskLst[unit].size > 0){
+			proc4Ptr temp;
+			// peek current track  
+			if (dCurrs[unit] == NULL){ // first time seeking 
+				dCurrs[unit] = diskLst[unit].head;
+			}
+			temp = dCurrs[unit];
+			int track = dCurrs[unit]->track;
+			
+			// Case1: Tracks request
+            if (dCurrs[unit]->request.opr == USLOSS_DISK_TRACKS){
+				r =  USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
+				if (warningGAW==1) {
+					USLOSS_Console("%d get way from warning unused variable\n", r);
+				}
                 result = waitDevice(USLOSS_DISK_DEV, unit, &status);
-                
                 if (result != 0) {
                     return 0;
                 }
-            }else{
-                //do reading and writing
+            }else{//Case2: reading and writing
+				while(dCurrs[unit]->sectors > 0){
+					USLOSS_DeviceRequest request;
+                    request.opr = USLOSS_DISK_SEEK;
+                    request.reg1 = &track;
+                    r = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
+					if (warningGAW==1) {
+						USLOSS_Console("%d get way from warning unused variable\n", r);
+					}
+					// Wait for the interrupt to occur
+                    result = waitDevice(USLOSS_DISK_DEV, unit, &status);  
+                    if (result != 0) {
+                        return 0;
+                    }
+					int fSec; 
+					for (fSec= dCurrs[unit]->firstSector; dCurrs[unit]->sectors > 0 && fSec < USLOSS_DISK_TRACK_SIZE; fSec++) {
+                        dCurrs[unit]->request.reg1 = (void *) ((long) fSec);
+                        r  = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
+                        if (warningGAW==1) {
+							USLOSS_Console("%d get way from warning unused variable\n", r);
+						}
+						result = waitDevice(USLOSS_DISK_DEV, unit, &status);
+                        if (result != 0) {
+                            return 0;
+                        }
+                        dCurrs[unit]->sectors--;
+                        dCurrs[unit]->request.reg2 += USLOSS_DISK_SECTOR_SIZE;
+                    }
+					track++;
+					dCurrs[unit]->firstSector = 0;
+				}
             }
-            
-            semvReal(current->waitSem);
+			// remove executed process from diskList
+			removeDisk(&diskLst[unit],unit);
+			semvReal(temp->waitSem);
         }
-        continue;
     }
+	semvReal(semRunning);
     return 0;
 }
 
@@ -344,8 +412,7 @@ void diskRead(USLOSS_Sysargs* sysArgs){
 
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    
-    setUserMode();
+	setUserMode();
 }
 
 /*
@@ -383,17 +450,11 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
         sectors = (int)(long)sysArgs->arg2,
         result;
         
-    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-        USLOSS_Console("diskWrite(): in user mode. Halting...\n");
-        USLOSS_Halt(1);
-    }
-        
     result = diskWriteReal(unit, track, first, sectors, sysArgs->arg1);
     
     sysArgs->arg1 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    
-    setUserMode();
+	setUserMode();
 }
 
 /*
@@ -475,6 +536,7 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
         r.reg1 = &driver->track;
         current->request = r;
         
+		/*
         if (diskLst[unit] == NULL){
             diskLst[unit] = current;
         }else{
@@ -490,7 +552,36 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
                 temp->nextDiskPtr = current;
             }
         }
-        
+        */
+		
+		// ==================================
+		if (diskLst[unit].head == NULL) { 
+			diskLst[unit].head = diskLst[unit].tail = current;
+			diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+			diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+		}
+		else {
+			proc4Ptr prev = diskLst[unit].tail;
+			proc4Ptr next = diskLst[unit].head;
+			while (next != NULL && next->track <= current->track) {
+				prev = next;
+				next = next->nextDiskPtr;
+				if (next == diskLst[unit].head)
+					break;
+			}
+			prev->nextDiskPtr = current;
+			current->prevDiskPtr = prev;
+			if (next == NULL)
+				next = diskLst[unit].head;
+			current->nextDiskPtr = next;
+			next->prevDiskPtr = current;
+			if (current->track < diskLst[unit].head->track)
+				diskLst[unit].head = current; 
+			if (current->track>=diskLst[unit].tail->track)
+				diskLst[unit].tail = current; 
+		}
+		diskLst[unit].size++;
+		//====================================
         semvReal(driver->waitSem);
         sempReal(current->waitSem);
     }
@@ -510,13 +601,8 @@ int TermDriver(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
         result = waitDevice(USLOSS_TERM_INT, unit, &status);
-        if (result != 0) /*process was zapped while waiting*/
+        if (result != 0)
             return 0;
-            
-        /*use MboxCondSend with chaWrite and charRead mailboxes to try
-          writing and reading. USLOSS_TERM_STAT_RECV gives status
-          for receiving and USLOSS_TERM_STAT_XMIT gives status
-          for sending. Use the unit to determine which mailboxes to use.*/
     }
     return 0;
 }
@@ -524,7 +610,7 @@ int TermDriver(char *arg){
 int TermReader(char *arg){
     semvReal(semRunning);
     while (!isZapped()){
-        //Receive from charRead mailbox corresponding to this unit
+        //Receive from this charReceive mailbox corresponding to this unit
         //When a full line is read send it to the lineSend mailbox corresponding to this unit
     }
     return -1;
@@ -545,17 +631,10 @@ void termRead(USLOSS_Sysargs* sysArgs){
         size = (int)(long)sysArgs->arg2,
         result;
         
-    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-        USLOSS_Console("termRead(): in user mode. Halting...\n");
-        USLOSS_Halt(1);
-    }
-        
     result = termReadReal(unit, size, sysArgs->arg1);
     
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    
-    setUserMode();
 }
 
 int termReadReal(int unit, int size, char *buffer){
@@ -584,17 +663,10 @@ void termWrite(USLOSS_Sysargs* sysArgs){
         size = (int)(long)sysArgs->arg2,
         result;
         
-    if ((USLOSS_PSR_CURRENT_MODE & USLOSS_PsrGet()) == 0) {
-        USLOSS_Console("termWrite(): in user mode. Halting...\n");
-        USLOSS_Halt(1);
-    }
-        
     result = termWriteReal(unit, size, sysArgs->arg1);
     
     sysArgs->arg2 = (void*)(long)result;
     sysArgs->arg4 = (void*)((long)(result != -1) - 1);
-    
-    setUserMode();
 }
 /*This routine writes size characters — a line of text pointed to by text to the terminal
 indicated by unit. A newline is not automatically appended, so if one is needed it must
@@ -612,17 +684,23 @@ void initProc(int i){
     proc4Ptr current = &ProcTable[i];
     
     current->pid = -1;
+	current->firstSector = -1;
+	current->sectors = -1;
     current->track = -1;
     current->waitSem = semcreateReal(0);
     current->sleepTime = -1;
     current->nextProcPtr = NULL;
     current->nextDiskPtr = NULL;
+	current->prevDiskPtr = NULL;
     current->nextSleepPtr = NULL;
 }
 
 int getTime(){
     int currentTime;
-    USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
+    int r = USLOSS_DeviceInput(USLOSS_CLOCK_DEV, 0, &currentTime);
+	if (warningGAW==1) {
+		USLOSS_Console("%d get way from warning unused variable\n", r);
+	}
     return currentTime;
 }
 
@@ -636,3 +714,78 @@ void setUserMode(){
         USLOSS_Console("%d get way from warning unused variable\n", r);
     }
 }
+
+proc4Ptr removeDisk(diskList* ld,int unit){
+	if (ld->size == 0)
+        return NULL;
+
+    if (dCurrs[unit] == NULL) {
+        dCurrs[unit] = ld->head;
+    }
+
+    proc4Ptr temp = dCurrs[unit];
+
+    if (ld->size == 1) {
+        ld->head = ld->tail = dCurrs[unit] = NULL;
+    }
+
+    else if (dCurrs[unit] == ld->head) {
+        ld->head = ld->head->nextDiskPtr;
+        ld->head->prevDiskPtr = ld->tail;
+        ld->tail->nextDiskPtr = ld->head;
+        dCurrs[unit] = ld->head;
+    }
+
+    else if (dCurrs[unit] == ld->tail) {
+        ld->tail = ld->tail->prevDiskPtr;
+        ld->tail->nextDiskPtr = ld->head;
+        ld->head->prevDiskPtr = ld->tail;
+        dCurrs[unit] = ld->head;
+    }
+
+    else {
+        dCurrs[unit]->prevDiskPtr->nextDiskPtr = dCurrs[unit]->nextDiskPtr;
+        dCurrs[unit]->nextDiskPtr->prevDiskPtr = dCurrs[unit]->prevDiskPtr;
+        dCurrs[unit] = dCurrs[unit]->nextDiskPtr;
+    }
+
+    ld->size--;
+
+    return temp;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
