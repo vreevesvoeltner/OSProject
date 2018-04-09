@@ -31,7 +31,6 @@ offending process is terminated (not quit).
 #include <stdlib.h> /* needed for atoi() */
 
 int warningGAW = 0;
-int db4 = 0;
 int  semRunning,
      diskPID[USLOSS_DISK_UNITS],
      termPID[USLOSS_TERM_UNITS][3];
@@ -139,11 +138,14 @@ void start3(void)
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
         //TODO: Figure out what is needed for Disk buffer
         sprintf(buf, "%d", i);
-        diskPID[i] = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
+        pid = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
         if (diskPID[i] < 0) {
             USLOSS_Console("start3(): Can't create disk driver\n");
             USLOSS_Halt(1);
         }
+		
+		//USLOSS_Console("======>pid:%d\n",pid);
+		diskPID[i] = pid;
         //ProcTable[diskPID[i] % MAXPROC].pid = diskPID[i];
         //diskLst[i] = NULL;
         sempReal(semRunning);
@@ -327,23 +329,13 @@ int DiskDriver(char *arg){
 	diskLst[unit].tail = NULL;
 	diskLst[unit].size = 0;
 	
-	//FIXME
-	if (db4) {
-        USLOSS_Console("DiskDriver: unit %d started, pid = %d\n", unit, me->pid);
-    }
     semvReal(semRunning);
 	int r = USLOSS_PsrSet(USLOSS_PsrGet() | USLOSS_PSR_CURRENT_INT);
 	if (warningGAW==1) {
         USLOSS_Console("%d get way from warning unused variable\n", r);
     }
-	int count = -1;
-   while (!isZapped()){
+    while (!isZapped()){
         sempReal(me->waitSem);
-		count++;
-		//FIXME
-		 if (db4) {
-            USLOSS_Console("=>DiskDriver:count:%d unit %d unblocked, zapped = %d, queue size = %d\n", count, unit, isZapped(), diskLst[unit].size);
-        }
         if (isZapped())
             return 0;
         
@@ -356,13 +348,9 @@ int DiskDriver(char *arg){
 			temp = dCurrs[unit];
 			int track = dCurrs[unit]->track;
 			
-			//FIXME: 
-			 if (db4) {
-                USLOSS_Console("=>DiskDriver: count:%d taking request from pid %d, track %d\n",count, temp->pid, temp->track);
-            }
 			// Case1: Tracks request
-            if (temp->request.opr == USLOSS_DISK_TRACKS){
-				r =  USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &temp->request);
+            if (dCurrs[unit]->request.opr == USLOSS_DISK_TRACKS){
+				r =  USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
 				if (warningGAW==1) {
 					USLOSS_Console("%d get way from warning unused variable\n", r);
 				}
@@ -371,30 +359,23 @@ int DiskDriver(char *arg){
                     return 0;
                 }
             }else{//Case2: reading and writing
-				while(temp->sectors > 0){
+				while(dCurrs[unit]->sectors > 0){
 					USLOSS_DeviceRequest request;
                     request.opr = USLOSS_DISK_SEEK;
                     request.reg1 = &track;
-					//request.reg2 = temp->buffer; //FIXME: delete me
                     r = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
 					if (warningGAW==1) {
 						USLOSS_Console("%d get way from warning unused variable\n", r);
 					}
 					// Wait for the interrupt to occur
                     result = waitDevice(USLOSS_DISK_DEV, unit, &status);  
-					
-					//FIXME
-					if (db4) {
-                        USLOSS_Console("=>DiskDriver:count:%d seeked to track %d, status = %d, result = %d\n", count,track, status, result);
-                    }
                     if (result != 0) {
                         return 0;
                     }
 					int fSec; 
-					for (fSec= temp->firstSector; temp->sectors > 0 && fSec < USLOSS_DISK_TRACK_SIZE; fSec++) {
-                        temp->request.reg1 = (void *) ((long) fSec);
-						//temp->request.reg2 = temp->buffer; //FIXME: delete me
-                        r  = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &temp->request);
+					for (fSec= dCurrs[unit]->firstSector; dCurrs[unit]->sectors > 0 && fSec < USLOSS_DISK_TRACK_SIZE; fSec++) {
+                        dCurrs[unit]->request.reg1 = (void *) ((long) fSec);
+                        r  = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &dCurrs[unit]->request);
                         if (warningGAW==1) {
 							USLOSS_Console("%d get way from warning unused variable\n", r);
 						}
@@ -402,21 +383,14 @@ int DiskDriver(char *arg){
                         if (result != 0) {
                             return 0;
                         }
-						
-						//FIXME
-						if (db4) {
-                            USLOSS_Console("=>DiskDriver:count:%d read/wrote sector %d, status = %d, result = %d, buffer = %s\n", count, fSec, status, result, temp->request.reg2);
-                        }
-                        temp->sectors--;
-                        temp->request.reg2 += USLOSS_DISK_SECTOR_SIZE;
+                        dCurrs[unit]->sectors--;
+                        dCurrs[unit]->request.reg2 += USLOSS_DISK_SECTOR_SIZE;
                     }
 					track++;
-					temp->firstSector = 0;
+					dCurrs[unit]->firstSector = 0;
 				}
             }
 			// remove executed process from diskList
-			if (db4) 
-                USLOSS_Console("=>DiskDriver:count:%d finished request from pid %d\n",count, temp->pid, result, status);
 			removeDisk(&diskLst[unit],unit);
 			semvReal(temp->waitSem);
         }
@@ -439,13 +413,8 @@ void diskRead(USLOSS_Sysargs* sysArgs){
         
     result = diskReadReal(unit, track, first, sectors, sysArgs->arg1);
 
-    if (result == -1) {
-        sysArgs->arg1 = (void *) ((long) result);
-        sysArgs->arg4 = (void *) ((long) -1);
-    } else {
-        sysArgs->arg1 = (void *) ((long) result);
-        sysArgs->arg4 = (void *) ((long) 0);
-    }
+    sysArgs->arg1 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 	setUserMode();
 }
 
@@ -544,13 +513,8 @@ void diskWrite(USLOSS_Sysargs* sysArgs){
         
     result = diskWriteReal(unit, track, first, sectors, sysArgs->arg1);
     
-    if (result == -1) {
-        sysArgs->arg1 = (void *) ((long) result);
-        sysArgs->arg4 = (void *) ((long) -1);
-    } else {
-        sysArgs->arg1 = (void *) ((long) result);
-        sysArgs->arg4 = (void *) ((long) 0);
-    }
+    sysArgs->arg1 = (void*)(long)result;
+    sysArgs->arg4 = (void*)((long)(result != -1) - 1);
 	setUserMode();
 }
 
@@ -565,7 +529,7 @@ Return values:
 >0: disk’s status register
 */
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
-	 proc4Ptr driver,
+   	 proc4Ptr driver,
              current;
    // check for illegal args
     if (unit < 0 || unit > 1 || track < 0 || track > ProcTable[diskPID[unit]].track ||
@@ -577,21 +541,16 @@ int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
 	driver = &ProcTable[diskPID[unit]];
 	
 	current = &ProcTable[getpid() % MAXPROC];
-    if (current->pid == -1){
+    if (current->pid != getpid()){
        initProc(getpid() % MAXPROC);
         current->pid = getpid();
     }
 	
-	//FIXE
-	if (db4)
-        USLOSS_Console("===>diskReadOrWriteReal: called with unit: %d, track: %d, first: %d, sectors: %d, buffer: %s\n===>Driver IP:%d, request process IP:%d\n", unit, track, first, sectors,buffer,driver->pid,current->pid);
-   	
 	current->request.opr = USLOSS_DISK_WRITE;
 	current->request.reg2 = buffer;
 	current->sectors = sectors;
 	current->track = track;
 	current->firstSector = first;
-	//current->buffer = buffer;
 	
 	// add to diskLst request 
 	if (diskLst[unit].head == NULL) { 
@@ -627,9 +586,7 @@ int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
     sempReal(current->waitSem); // block current 
 	int st;
     int result = USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, &st);
-	//FIXME
-	if (db4)
-        USLOSS_Console("===>diskReadOrWriteReal: finished, status = %d, result = %d\n", st, result);
+	
     return result;
 }
 /*
