@@ -175,7 +175,7 @@ void start3(void)
         writeProc[i] = MboxCreate(1, sizeof(int));
         recvIntEnabled[i] = 0;
         xmitIntEnabled[i] = 0;
-
+	sprintf(name, "Term Driver %d", i);
         sprintf(buf, "%d", i); 
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
@@ -184,7 +184,7 @@ void start3(void)
         }
         ProcTable[termPID[i][0] % MAXPROC].pid = termPID[i][0];
         sempReal(semRunning);
-        
+        	sprintf(name, "Term Reader %d", i);
         termPID[i][1] = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][1] < 0) {
             USLOSS_Console("start3(): Can't create term reader\n");
@@ -192,7 +192,7 @@ void start3(void)
         }
         ProcTable[termPID[i][1] % MAXPROC].pid = termPID[i][1];
         sempReal(semRunning);
-        
+        	sprintf(name, "Term Writer %d", i);
         termPID[i][2] = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][2] < 0) {
             USLOSS_Console("start3(): Can't create term writer\n");
@@ -227,9 +227,11 @@ void start3(void)
     for (i = 0; i < USLOSS_TERM_UNITS; i++){
         FILE *f;
         int result;
+	char line[MAXLINE];
         
         // Zap TermReader
-        MboxSend(charRead[i], NULL, 0);
+        MboxCondSend(charRead[i], NULL, 0);
+	MboxCondReceive(lineRead[i], line, MAXLINE);
         zap(termPID[i][1]);
         join(&status);
         
@@ -783,6 +785,7 @@ int TermReader(char *arg){
     char line[MAXLINE];
     
     semvReal(semRunning);
+    USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(0));
     while (!isZapped()){
         MboxReceive(charRead[unit], &intIn, sizeof(int));
         line[i] = USLOSS_TERM_STAT_CHAR(intIn);
