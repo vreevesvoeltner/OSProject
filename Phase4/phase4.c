@@ -427,7 +427,65 @@ Return values:
 >0: disk’s status register
 */
 int diskReadReal(int unit, int track, int first, int sectors, void *buffer){
-    return -1;
+	 proc4Ptr driver,
+             current;
+   // check for illegal args
+    if (unit < 0 || unit > 1 || track < 0 || track > ProcTable[diskPID[unit]].track ||
+        first < 0 || first > USLOSS_DISK_TRACK_SIZE || buffer == NULL  ||
+        (first + sectors)/USLOSS_DISK_TRACK_SIZE + track > ProcTable[diskPID[unit]].track) {
+        return -1;
+    }
+	
+	driver = &ProcTable[diskPID[unit]];
+	
+	current = &ProcTable[getpid() % MAXPROC];
+    if (current->pid != getpid()){
+       initProc(getpid() % MAXPROC);
+        current->pid = getpid();
+    }
+	
+	current->request.opr = USLOSS_DISK_READ;
+	current->request.reg2 = buffer;
+	current->sectors = sectors;
+	current->track = track;
+	current->firstSector = first;
+	
+	// add to diskLst request 
+	if (diskLst[unit].head == NULL) { 
+		diskLst[unit].head = diskLst[unit].tail = current;
+		diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+		diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+	}
+	else {
+		proc4Ptr prev = diskLst[unit].tail;
+		proc4Ptr next = diskLst[unit].head;
+		while (next != NULL && next->track <= current->track) {
+			prev = next;
+			next = next->nextDiskPtr;
+			if (next == diskLst[unit].head)
+				break;
+		}
+		prev->nextDiskPtr = current;
+		current->prevDiskPtr = prev;
+		if (next == NULL)
+			next = diskLst[unit].head;
+		current->nextDiskPtr = next;
+		next->prevDiskPtr = current;
+		if (current->track < diskLst[unit].head->track)
+			diskLst[unit].head = current; 
+		if (current->track>=diskLst[unit].tail->track)
+			diskLst[unit].tail = current; 
+	}
+	diskLst[unit].size++;
+	
+		
+	//=======================
+	semvReal(driver->waitSem);  // wake up disk driver
+    sempReal(current->waitSem); // block current 
+	int st;
+    int result = USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, &st);
+	
+    return result;
 }
 /*
 Writes one or more sectors to the disk (diskWrite).
@@ -468,8 +526,65 @@ Return values:
 >0: disk’s status register
 */
 int diskWriteReal(int unit, int track, int first, int sectors, void *buffer){
-    
-    return -1;
+   	 proc4Ptr driver,
+             current;
+   // check for illegal args
+    if (unit < 0 || unit > 1 || track < 0 || track > ProcTable[diskPID[unit]].track ||
+        first < 0 || first > USLOSS_DISK_TRACK_SIZE || buffer == NULL  ||
+        (first + sectors)/USLOSS_DISK_TRACK_SIZE + track > ProcTable[diskPID[unit]].track) {
+        return -1;
+    }
+	
+	driver = &ProcTable[diskPID[unit]];
+	
+	current = &ProcTable[getpid() % MAXPROC];
+    if (current->pid != getpid()){
+       initProc(getpid() % MAXPROC);
+        current->pid = getpid();
+    }
+	
+	current->request.opr = USLOSS_DISK_WRITE;
+	current->request.reg2 = buffer;
+	current->sectors = sectors;
+	current->track = track;
+	current->firstSector = first;
+	
+	// add to diskLst request 
+	if (diskLst[unit].head == NULL) { 
+		diskLst[unit].head = diskLst[unit].tail = current;
+		diskLst[unit].head->nextDiskPtr = diskLst[unit].tail->nextDiskPtr = NULL;
+		diskLst[unit].head->prevDiskPtr = diskLst[unit].tail->prevDiskPtr = NULL;
+	}
+	else {
+		proc4Ptr prev = diskLst[unit].tail;
+		proc4Ptr next = diskLst[unit].head;
+		while (next != NULL && next->track <= current->track) {
+			prev = next;
+			next = next->nextDiskPtr;
+			if (next == diskLst[unit].head)
+				break;
+		}
+		prev->nextDiskPtr = current;
+		current->prevDiskPtr = prev;
+		if (next == NULL)
+			next = diskLst[unit].head;
+		current->nextDiskPtr = next;
+		next->prevDiskPtr = current;
+		if (current->track < diskLst[unit].head->track)
+			diskLst[unit].head = current; 
+		if (current->track>=diskLst[unit].tail->track)
+			diskLst[unit].tail = current; 
+	}
+	diskLst[unit].size++;
+	
+		
+	//=======================
+	semvReal(driver->waitSem);  // wake up disk driver
+    sempReal(current->waitSem); // block current 
+	int st;
+    int result = USLOSS_DeviceInput(USLOSS_DISK_DEV, unit, &st);
+	
+    return result;
 }
 /*
 Returns information about the size of the disk (diskSize).
