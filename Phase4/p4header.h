@@ -10,6 +10,7 @@ typedef struct proc4 *proc4Ptr;
 
 struct proc4{
     int pid,
+        unit,
         track,
         sleepTime,  // Time when the process should wake up
         waitSem;    // Use to block processes from continuing

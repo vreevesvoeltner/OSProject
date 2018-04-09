@@ -124,7 +124,6 @@ void start3(void){
      */
 
     for (i = 0; i < USLOSS_DISK_UNITS; i++) {
-        //TODO: Figure out what is needed for Disk buffer
         sprintf(buf, "%d", i);
         diskPID[i] = fork1("Disk Driver", DiskDriver, buf, USLOSS_MIN_STACK, 2);
         if (diskPID[i] < 0) {
@@ -149,23 +148,27 @@ void start3(void){
         interruptsEnabled[i] = 0;
         
         sprintf(buf, "%d", i); 
-        sprintf(name, "term%d", i);
+        sprintf(name, "term%d driver", i);
         termPID[i][0] = fork1(name, TermDriver, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][0] < 0) {
             USLOSS_Console("start3(): Can't create term driver\n");
             USLOSS_Halt(1);
         }
         ProcTable[termPID[i][0] % MAXPROC].pid = termPID[i][0];
+        ProcTable[termPID[i][0] % MAXPROC].unit = i;
         sempReal(semRunning);
         
+        sprintf(name, "term%d reader", i);
         termPID[i][1] = fork1(name, TermReader, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][1] < 0) {
             USLOSS_Console("start3(): Can't create term reader\n");
             USLOSS_Halt(1);
         }
         ProcTable[termPID[i][1] % MAXPROC].pid = termPID[i][1];
+        ProcTable[termPID[i][1] % MAXPROC].unit = i;
         sempReal(semRunning);
         
+        sprintf(name, "term%d writer", i);
         termPID[i][2] = fork1(name, TermWriter, buf, USLOSS_MIN_STACK, 2);
         if (termPID[i][2] < 0) {
             USLOSS_Console("start3(): Can't create term writer\n");
@@ -191,7 +194,6 @@ void start3(void){
     join(&status);
     
     for(i = 0; i < USLOSS_DISK_UNITS; i++){
-        //TODO: Get mutex
         semvReal(ProcTable[diskPID[i]].waitSem);
         zap(diskPID[i]);
         join(&status);
@@ -522,7 +524,7 @@ int diskSizeReal(int unit, int* sector, int* track, int* disk){
 }
 
 int TermDriver(char *arg){
-    int unit = atoi((char*)arg),
+    int unit = atoi(arg),
         status,
         devStatus,
         result;
@@ -544,6 +546,7 @@ int TermDriver(char *arg){
             if (DEBUG4) 
                 USLOSS_Console("TermDriver: receive error\n");
         }
+        
         
         devStatus = USLOSS_TERM_STAT_XMIT(status);
         if (devStatus == USLOSS_DEV_READY){
@@ -580,7 +583,7 @@ int TermReader(char *arg){
 /*
 Read a line from a terminal (termRead).
 Input
-arg1: address of the user’s line buffer.
+arg1: address of the user?s line buffer.
 arg2: maximum size of the buffer.
 arg3: the unit number of the terminal from which to read.
 Output
@@ -614,7 +617,7 @@ int termReadReal(int unit, int size, char *buffer){
         USLOSS_Halt(1);
     }
     
-    if (unit <= 0 || unit > USLOSS_TERM_UNITS - 1 || size < 0)
+    if (unit < 0 || unit > USLOSS_TERM_UNITS - 1 || size <= 0)
         return -1;
     
     if (!interruptsEnabled[unit]) {
@@ -632,7 +635,7 @@ int termReadReal(int unit, int size, char *buffer){
 /*
 Write a line to a terminal (termWrite).
 Input
-arg1: address of the user’s line buffer.
+arg1: address of the user?s line buffer.
 arg2: number of characters to write.
 arg3: the unit number of the terminal to which to write.
 Output
@@ -655,13 +658,15 @@ int TermWriter(char *arg){
         if (isZapped())
             break;
         
-        ctrl = USLOSS_TERM_CTRL_XMIT_INT(0);
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_XMIT_INT(ctrl));
+        ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
+
+        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)ctrl);
         
         for (i = 0; i < lineSize; i++){
             MboxReceive(charWrite[unit], &devStatus, sizeof(int));
 
             if (USLOSS_TERM_STAT_XMIT(devStatus) == USLOSS_DEV_READY) {
+                ctrl = 0;
                 ctrl = USLOSS_TERM_CTRL_CHAR(0, line[i]);
                 ctrl = USLOSS_TERM_CTRL_XMIT_CHAR(ctrl);
                 ctrl = USLOSS_TERM_CTRL_XMIT_INT(ctrl);
@@ -696,7 +701,7 @@ void termWrite(USLOSS_Sysargs* sysArgs){
     
     setUserMode();
 }
-/*This routine writes size characters — a line of text pointed to by text to the terminal
+/*This routine writes size characters ? a line of text pointed to by text to the terminal
 indicated by unit. A newline is not automatically appended, so if one is needed it must
 be included in the text to be written. This routine should not return until the text has been
 written to the terminal.
@@ -727,6 +732,7 @@ void initProc(int i){
     proc4Ptr current = &ProcTable[i];
     
     current->pid = -1;
+    current->unit = -1;
     current->track = -1;
     current->waitSem = semcreateReal(0);
     current->sleepTime = -1;
