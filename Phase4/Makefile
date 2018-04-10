@@ -15,7 +15,7 @@ PHASE3LIB = patrickphase3
 #PHASE2LIB = patrickphase2debug
 #PHASE3LIB = patrickphase3debug
 
-HDRS = p4header.h
+HDRS = p4header.h libuser.h
 
 INCLUDE = ${PREFIX}/include
 

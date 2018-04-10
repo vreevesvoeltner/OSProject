@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------------
-phase4.c v.5
+phase4.c v.7
 Students:
 Veronica Reeves
 Thai Pham
@@ -393,7 +393,7 @@ int DiskDriver(char *arg){
                 while(dCurrs[unit]->sectors > 0){
                     USLOSS_DeviceRequest request;
                     request.opr = USLOSS_DISK_SEEK;
-                    request.reg1 = track;
+                    request.reg1 = (void*)(long)track;
                     r = USLOSS_DeviceOutput(USLOSS_DISK_DEV, unit, &request);
                     if (warningGAW==1) {
                         USLOSS_Console("%d get way from warning unused variable\n", r);
@@ -781,11 +781,16 @@ int TermDriver(char *arg){
 int TermReader(char *arg){
     int unit = atoi((char*)arg),
         intIn,
+        result,
         i = 0;
     char line[MAXLINE];
     
     semvReal(semRunning);
-    USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+    result = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(0));
+    if (warningGAW==1) {
+        USLOSS_Console("%d,get way from warning unused variable\n",result);
+    }
+
     while (!isZapped()){
         MboxReceive(charRead[unit], &intIn, sizeof(int));
         line[i] = USLOSS_TERM_STAT_CHAR(intIn);
@@ -851,9 +856,14 @@ int termReadReal(int unit, int size, char *buffer){
     
     recvIntEnabled[unit]--;
     ctrl = 0;
-    if (!recvIntEnabled[unit] && !xmitIntEnabled[unit])
-        USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(ctrl));
+    if (!recvIntEnabled[unit] && !xmitIntEnabled[unit]){
+        result = USLOSS_DeviceOutput(USLOSS_TERM_DEV, unit, (void*)(long)USLOSS_TERM_CTRL_RECV_INT(ctrl));
+                if (warningGAW==1) {
+            USLOSS_Console("%d,get way from warning unused variable\n",result);
+        }
         
+    }
+
     return lineSize;
 }
 /*
