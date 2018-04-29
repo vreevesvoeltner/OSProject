@@ -31,17 +31,32 @@ extern void mbox_condreceive(USLOSS_Sysargs *args_ptr);
 
 Process processes[MAXPROC];
 
+FTEptr frameTable;
+
+DTEptr diskTable;
+
+int pagerPID[MAXPAGERS]; // pager pids
+
+int clockhand,
+    clockhandMbox;
+
+void* vmRegion = NULL; // adress of the beginning of the VM
+
 FaultMsg faults[MAXPROC]; /* Note that a process can have only
                            * one fault at a time, so we can
                            * allocate the messages statically
                            * and index them by pid. */
+int faultMbox;
 VmStats  vmStats;
 
 
 static void FaultHandler(int type, void * offset);
 
-static void vmInit(USLOSS_Sysargs *USLOSS_SysargsPtr);
+static void vmInit(USLOSS_Sysargs *sysargs);
+void *vmInitReal(int mappings, int pages, int frames, int pagers);
 static void vmDestroy(USLOSS_Sysargs *USLOSS_SysargsPtr);
+void vmDestroyReal(void);
+void setUserMode();
 /*
  *----------------------------------------------------------------------
  *
@@ -110,10 +125,22 @@ start4(char *arg)
  *
  *----------------------------------------------------------------------
  */
-static void
-vmInit(USLOSS_Sysargs *USLOSS_SysargsPtr)
-{
+static void vmInit(USLOSS_Sysargs *sysargs){
     CheckMode();
+    
+    int mappings = (int)(long)sysargs->arg1,
+        pages = (int)(long)sysargs->arg2,
+        frames = (int)(long)sysargs->arg3,
+        pagers = (int)(long)sysargs->arg4;
+        
+    sysargs->arg1 = vmInitReal(mappings, pages, frames, pagers);
+    
+    if ((int)(long)sysargs->arg1 < 0)
+        sysargs->arg4 = sysargs->arg1;
+    else
+        sysargs->arg4 = (void*)(long)0;
+    
+    setUserMode();
 } /* vmInit */
 
 
@@ -133,10 +160,10 @@ vmInit(USLOSS_Sysargs *USLOSS_SysargsPtr)
  *----------------------------------------------------------------------
  */
 
-static void
-vmDestroy(USLOSS_Sysargs *USLOSS_SysargsPtr)
-{
+static void vmDestroy(USLOSS_Sysargs *USLOSS_SysargsPtr){
    CheckMode();
+   
+   vmDestroyReal();
 } /* vmDestroy */
 
 
@@ -157,43 +184,101 @@ vmDestroy(USLOSS_Sysargs *USLOSS_SysargsPtr)
  *
  *----------------------------------------------------------------------
  */
-void *
-vmInitReal(int mappings, int pages, int frames, int pagers)
-{
+void *vmInitReal(int mappings, int pages, int frames, int pagers){
    int status;
    int dummy;
+   int i;
 
    CheckMode();
-   status = USLOSS_MmuInit(mappings, pages, frames, USLOSS_MMU_MODE_TLB);
-   if (status != MMU_OK) {
-      USLOSS_Console("vmInitReal: couldn't initialize MMU, status %d\n", status);
-      abort();
-   }
-   USLOSS_IntVec[USLOSS_MMU_INT] = FaultHandler;
+   
+    if (vmRegion > 0){
+        if (DEBUG5)
+            USLOSS_Console("vmInitReal: vmRegion already initialized\n");
+        return (void*)(long)-2;
+    }
+    
+    if (mappings != pages){
+        if (DEBUG5)
+            USLOSS_Console("vmInitReal: Mappings and pages are not equal.\n");
+        return (void*)(long)-1;
+    }
+    
+    status = USLOSS_MmuInit(mappings, pages, frames, USLOSS_MMU_MODE_TLB);
+    if (status != USLOSS_MMU_OK) {
+        USLOSS_Console("vmInitReal: couldn't initialize MMU, status %d\n", status);
+        abort();
+    }
+    USLOSS_IntVec[USLOSS_MMU_INT] = FaultHandler;
+    
+    frameTable = malloc(frames * sizeof(FTE));
+    for(i = 0; i < frames; i ++){
+        frameTable[i].state = FUNUSED;
+        frameTable[i].frame = 0;
+        frameTable[i].page = 0;
+        frameTable[i].pid = -1;      
+        frameTable[i].next = NULL;
+    }
+    clockhand = 0;
+    clockhandMbox = MboxCreate(1, 0);
 
    /*
     * Initialize page tables.
     */
+    
+    for (i = 0; i < MAXPROC; i++){
+        processes[i].pid = -1;
+        processes[i].numPages = pages;
+        processes[i].pageTable = NULL;
+        processes[i].faultMbox = MboxCreate(0, 0);
+        
+        faults[i].pid = -1;
+        faults[i].addr = NULL;
+        faults[i].replyMbox = MboxCreate(1, 0);
+    }
 
    /* 
     * Create the fault mailbox or semaphore
     */
+    
+    faultMbox =  MboxCreate(pagers, sizeof(FaultMsg));
 
    /*
     * Fork the pagers.
     */
+    
+    for(int i = 0; i < MAXPAGERS; i++){
+        pagerPID[i] = -1;
+        if (i < pagers)
+            pagerPID[i] = fork1("Pager", Pager, NULL, 8*USLOSS_MIN_STACK, PAGER_PRIORITY);
+    }
+    
+    int blocks;
+    diskSizeReal(1, &dummy, &dummy, &blocks);
+    blocks *= 2;
 
+    diskTable = malloc(blocks * sizeof(DTE));
+    for (i = 0; i < blocks; i++){
+        diskTable[i].pid = -1;
+        diskTable[i].page = -1;
+        diskTable[i].track = i / 2;
+        diskTable[i].sector = (i % 2) * USLOSS_MmuPageSize() / USLOSS_DISK_SECTOR_SIZE;
+    }
    /*
     * Zero out, then initialize, the vmStats structure
     */
    memset((char *) &vmStats, 0, sizeof(VmStats));
    vmStats.pages = pages;
    vmStats.frames = frames;
+   vmStats.diskBlocks = blocks;
+   vmStats.freeFrames = frames;
+   vmStats.freeDiskBlocks = blocks;
+   vmStats.new = 0;
    /*
     * Initialize other vmStats fields.
     */
 
-   return USLOSS_MmuRegion(&dummy);
+   vmRegion = USLOSS_MmuRegion(&dummy);
+   return vmRegion;
 } /* vmInitReal */
 
 
@@ -246,9 +331,7 @@ PrintStats(void)
  *
  *----------------------------------------------------------------------
  */
-void
-vmDestroyReal(void)
-{
+void vmDestroyReal(void){
 
    CheckMode();
    USLOSS_MmuDone();
@@ -284,7 +367,7 @@ vmDestroyReal(void)
  */
 static void
 FaultHandler(int type /* MMU_INT */,
-             int arg  /* Offset within VM region */)
+             void* offset  /* Offset within VM region */)
 {
    int cause;
 
@@ -327,3 +410,14 @@ Pager(char *buf)
     }
     return 0;
 } /* Pager */
+
+/*    
+setUserMode()
+    Switch from kernel to user mode 
+*/
+void setUserMode(){
+    int r = USLOSS_PsrSet( USLOSS_PsrGet() & ~USLOSS_PSR_CURRENT_MODE );
+    if (DEBUG5) {
+        USLOSS_Console("%d get way from warning unused variable\n", r);
+    }
+}

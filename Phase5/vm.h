@@ -2,6 +2,7 @@
  * vm.h
  */
 
+#define DEBUG5 0
 
 /*
  * All processes use the same tag.
@@ -20,6 +21,7 @@
  */
 #define DUNUSED 600
 #define DINUSE  601
+#define SWAPDISK 1 // disk to use
 
 /*
  * Different States for a frame
@@ -34,6 +36,8 @@ typedef struct PTE PTE;
 typedef struct PTE* PTEptr;
 typedef struct FTE FTE;
 typedef struct FTE* FTEptr;
+typedef struct DTE DTE;
+typedef struct DTE* DTEptr;
 typedef struct Process Process;
 typedef struct Process* ProcPtr;
 typedef struct FaultMsg FaultMsg;
@@ -53,14 +57,26 @@ struct FTE{
         frame,  // The number of the frame
         page,   // The page that uses this frame, -1 if none
         pid;    // The process number that owns the frame
-    FTEptr nextFrame;
+    FTEptr next;
+};
+
+/*
+ * Disk table entry
+ */
+struct DTE{
+    int state,
+        page,
+        track,
+        sector,
+        pid;
 };
 
 /*
  * Per-process information.
  */
 struct Process {
-    int  numPages,   // Size of the page table.
+    int  pid,
+         numPages,   // Size of the page table.
          faultMbox;  // Used to wait for fault resolution
     PTE  *pageTable; // The page table for the process.
 };
@@ -76,3 +92,4 @@ struct FaultMsg {
     // Add more stuff here.
 };
 
+#define CheckMode() assert(USLOSS_PsrGet() & USLOSS_PSR_CURRENT_MODE)
