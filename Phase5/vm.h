@@ -48,7 +48,6 @@ struct PTE {
 /*
  * Frame table entry
  */
-// Create a struct for your frame table:
 struct FTE{
     int state,  // Frame state, values to be added above like with PTE
         frame,  // The number of the frame
