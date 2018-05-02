@@ -412,6 +412,8 @@ static int
 Pager(char *buf)
 {
     FaultMsg msg;
+    int frame;
+
     while(1) {
         MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
         /* Wait for fault to occur (receive from mailbox) */
@@ -420,7 +422,7 @@ Pager(char *buf)
          * replace a page (perhaps write to disk) */
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
-        MboxSend(msg.replyMbox, NULL, 0);
+        MboxSend(msg.replyMbox, 0, sizeof(int));
     }
     return 0;
 } /* Pager */
