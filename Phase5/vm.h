@@ -47,7 +47,6 @@ struct PTE {
     int  state,      // See above.
          frame,      // Frame that stores the page (if any). -1 if none.
          diskBlock;  // Disk block that stores the page (if any). -1 if none.
-    PTEptr nextPage;
 };
 
 /*
@@ -58,7 +57,6 @@ struct FTE{
         frame,  // The number of the frame
         page,   // The page that uses this frame, -1 if none
         pid;    // The process number that owns the frame
-    FTEptr next;
 };
 
 /*

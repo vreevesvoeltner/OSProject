@@ -466,7 +466,7 @@ Pager(char *buf)
         MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
         if (isZapped())
             break;
-        
+        frame = -1;
         currProc =  &processes[msg.pid % MAXPROC];
         page = (int)(long)msg.addr / USLOSS_MmuPageSize();
         /* Wait for fault to occur (receive from mailbox) */
@@ -477,33 +477,52 @@ Pager(char *buf)
             for (frame = 0; frame < vmStats.frames; frame++) {
                 if (frameTable[frame].state == FUNUSED) {
                     USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
-                    memset(vmRegion, 0, USLOSS_MmuPageSize());
                     vmStats.freeFrames--; 
                     break;
                 }
             }
         }else{
+            ProcPtr other;
             /* If there isn't one then use clock algorithm to
              * replace a page (perhaps write to disk) */
-             
-             // Look for unreferenced and dirty
-            if (frame == -1){
-                for(i = 0; i < vmStats.frames; i++){
-                    USLOSS_MmuGetAccess(clockhand, &access);
-                    if (access & USLOSS_MMU_REF == 0){
-                        frame = clockhand;
-                        //write stuff to disk
-                        clockhand = (clockhand + 1) % vmStats.frames;
-                        break;
-                    }else{
-                        USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
-                        clockhand = (clockhand + 1) % vmStats.frames;
+            for (int j = 0; j < 2; j++){
+                 // Look for unreferenced and dirty
+                if (frame == -1){
+                    for(i = 0; i < vmStats.frames; i++){
+                        USLOSS_MmuGetAccess(clockhand, &access);
+                        if ((access & USLOSS_MMU_REF) == 0){
+                            frame = clockhand;
+                            other = &(processes[frameTable[frame].pid]);
+                            //write stuff to disk
+                            
+                            // set old page's info
+                            other->pageTable[frameTable[frame].page].state = INCORE;
+                            other->pageTable[frameTable[frame].page].frame = -1;
+                            
+                            vmStats.pageOuts++;
+                            clockhand = (clockhand + 1) % vmStats.frames;
+                            USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+                            break;
+                        }else{
+                            USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                            clockhand = (clockhand + 1) % vmStats.frames;
+                        }
                     }
                 }
             }
         }
         
           // First time be used
+        
+        if (currProc->pageTable[page].state == UNUSED) {
+            vmStats.new++; 
+            memset(vmRegion, 0, USLOSS_MmuPageSize());
+        }else{
+            //USLOSS_Console("Pager(): Getting contents from disk not yet done, setting to 0 for now\n");
+            memset(vmRegion, 0, USLOSS_MmuPageSize());
+            //TODO: get page contents from disk
+            vmStats.pageIns++;
+        }
 
         // unmap 
         USLOSS_MmuSetAccess(frame, 0); 
@@ -513,9 +532,6 @@ Pager(char *buf)
         /* Unblock waiting (faulting) process */
         
         currProc->pageTable[page].frame = frame;
-        if (currProc->pageTable[page].state == UNUSED) {
-            vmStats.new++; 
-        }
         currProc->pageTable[page].state = INFRAME;
         
         frameTable[frame].state = FINUSE;
