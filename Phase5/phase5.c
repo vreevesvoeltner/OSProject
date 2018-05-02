@@ -335,9 +335,31 @@ void vmDestroyReal(void){
 
    CheckMode();
    USLOSS_MmuDone();
+   
+    int i,
+        status;
+    FaultMsg dummy;
+    
+    if (vmRegion == NULL)
+        return;
    /*
     * Kill the pagers here.
     */
+    for (i = 0; i < MAXPAGERS; i++) {
+        if (pagerPID[i] == -1)
+            break;
+        if (DEBUG5) 
+            USLOSS_Console("vmDestroyReal: zapping pager %d, pid %d \n", i, pagerPID[i]);
+        MboxSend(faultMbox, &dummy, sizeof(FaultMsg)); // wake up pager
+        zap(pagerPID[i]);
+        join(&status);
+    }
+    
+    for (i = 0; i < MAXPROC; i++) {
+        MboxRelease(faults[i].replyMbox);
+    }
+
+    MboxRelease(faultMbox);
 
 
    /* 
@@ -373,6 +395,7 @@ FaultHandler(int type /* MMU_INT */,
        frameNum = 0,
        pageNum = 0;
    FaultMsg* fmsg = &(faults[getpid() % MAXPROC]);
+   ProcPtr current = &(processes[getpid() % MAXPROC]);
 
    assert(type == USLOSS_MMU_INT);
    cause = USLOSS_MmuGetCause();
@@ -386,9 +409,15 @@ FaultHandler(int type /* MMU_INT */,
         fmsg->replyMbox = MboxCreate(1, sizeof(int));
     fmsg->pid = getpid();
     fmsg->addr = offset;
+    pageNum = (int)(long)offset / USLOSS_MmuPageSize();
     
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
+    
+    current->pageTable[pageNum].frame = frameNum;
+    current->pageTable[pageNum].state = INFRAME;
+    
+    USLOSS_MmuMap(TAG, pageNum, frameNum, USLOSS_MMU_PROT_RW);
     
 } /* FaultHandler */
 
