@@ -35,6 +35,7 @@ void p1_fork(int pid){
 } /* p1_fork */
 
 void p1_switch(int old, int new){
+    //USLOSS_Console("p1Switch(): old = %d, new = %d\n", old, new);
     if (vmRegion == NULL){
         if (DEBUG && debugflag)
             USLOSS_Console("p1_switch(): vmRegion not yet initialized.\n");
@@ -66,6 +67,7 @@ void p1_switch(int old, int new){
             for (i = 0; i < proc->numPages; i++){
                 if (proc->pageTable[i].state == INFRAME){
                     USLOSS_MmuMap(TAG, i, proc->pageTable[i].frame, USLOSS_MMU_PROT_RW);
+                    
                     if (DEBUG && debugflag)
                         USLOSS_Console("p1_switch(): mapped page %d to frame %d for proc %d \n", i, proc->pageTable[i].frame, new);
                 }

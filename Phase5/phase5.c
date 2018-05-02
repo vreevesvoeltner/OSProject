@@ -423,20 +423,9 @@ FaultHandler(int type /* MMU_INT */,
 	pageNum = (int)(long)offset / USLOSS_MmuPageSize();
     fmsg->pid = getpid();
     fmsg->addr = offset;
-    fmsg->pageNum = pageNum;
-    
+
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
-    
-    current->pageTable[pageNum].frame = frameNum;
-    current->pageTable[pageNum].state = INFRAME;
-    
-    frameTable[frameNum].state = FINUSE;
-    frameTable[frameNum].pid = getpid();
-    frameTable[frameNum].page = pageNum;
-    
-    //memset(vmRegion, 0, USLOSS_MmuPageSize());
-    USLOSS_MmuMap(TAG, pageNum, frameNum, USLOSS_MMU_PROT_RW);
     
 } /* FaultHandler */
 
@@ -460,11 +449,11 @@ static int
 Pager(char *buf)
 {
     FaultMsg msg;
-    int frame = 0;
     char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
 	Process *currProc;
 	PTEptr currPage;
-
+    int frame = 0,
+        page = 0;
 	
     while(1) {
         /* Wait for fault to occur (receive from mailbox) */
@@ -475,6 +464,8 @@ Pager(char *buf)
 		currProc =  &processes[msg.pid % MAXPROC];
 		currPage = &currProc->pageTable[msg.pageNum];
 		
+        page = (int)(long)msg.addr / USLOSS_MmuPageSize();
+        /* Wait for fault to occur (receive from mailbox) */
         /* Look for free frame */
 		 /* Look for free frame */
         if (vmStats.freeFrames > 0) {
@@ -505,6 +496,14 @@ Pager(char *buf)
 		
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
+        
+        currProc->pageTable[page].frame = frame;
+        currProc->pageTable[page].state = INFRAME;
+        
+        frameTable[frame].state = FINUSE;
+        frameTable[frame].pid = currProc->pid;
+        frameTable[frame].page = page;
+        USLOSS_MmuMap(TAG, page, frame, USLOSS_MMU_PROT_RW);
         MboxSend(msg.replyMbox, &frame, sizeof(int));
     }
     return 0;
