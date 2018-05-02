@@ -450,7 +450,8 @@ Pager(char *buf)
 	Process *currProc;
     int frame = 0,
         page = 0,
-        i;
+        i,
+        access = 0;
 	
     while(1) {
         /* Wait for fault to occur (receive from mailbox) */
@@ -479,8 +480,19 @@ Pager(char *buf)
 		frame = -1;
 		 
          // Look for unreferenced and dirty
-		for(i = 0; i < vmStats.frames; i++){
-            
+        if (frame == -1){
+            for(i = 0; i < vmStats.frames; i++){
+                USLOSS_MmuGetAccess(clockhand, &access);
+                if (access & USLOSS_MMU_REF == 0){
+                    frame = clockhand;
+                    //write stuff to disk
+                    clockhand = (clockhand + 1) % vmStats.frames;
+                    break;
+                }else{
+                    USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                    clockhand = (clockhand + 1) % vmStats.frames;
+                }
+            }
         }
 		
 		  // First time be used
