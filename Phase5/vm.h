@@ -77,8 +77,7 @@ struct DTE{
  */
 struct Process {
     int  pid,
-         numPages,   // Size of the page table.
-         faultMbox;  // Used to wait for fault resolution
+         numPages;   // Size of the page table.
     PTE  *pageTable; // The page table for the process.
 };
 

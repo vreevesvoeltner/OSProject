@@ -241,11 +241,10 @@ void *vmInitReal(int mappings, int pages, int frames, int pagers){
         processes[i].pid = -1;
         processes[i].numPages = pages;
         processes[i].pageTable = NULL;
-        processes[i].faultMbox = MboxCreate(0, 0);
         
         faults[i].pid = -1;
         faults[i].addr = NULL;
-        faults[i].replyMbox = MboxCreate(1, 0);
+        faults[i].replyMbox = MboxCreate(1, sizeof(int));
     }
 
    /* 
@@ -416,11 +415,8 @@ FaultHandler(int type /* MMU_INT */,
    /*
     * Fill in faults[pid % MAXPROC], send it to the pagers, and wait for the
     * reply.
-    */
-    if (fmsg->pid == -1)
-        fmsg->replyMbox = MboxCreate(1, sizeof(int));
-	
-	pageNum = (int)(long)offset / USLOSS_MmuPageSize();
+    */	
+    pageNum = (int)(long)offset / USLOSS_MmuPageSize();
     fmsg->pid = getpid();
     fmsg->addr = offset;
 
@@ -451,7 +447,6 @@ Pager(char *buf)
     FaultMsg msg;
     char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
 	Process *currProc;
-	PTEptr currPage;
     int frame = 0,
         page = 0;
 	
@@ -462,17 +457,17 @@ Pager(char *buf)
             break;
         
 		currProc =  &processes[msg.pid % MAXPROC];
-		currPage = &currProc->pageTable[msg.pageNum];
-		
-        page = (int)(long)msg.addr / USLOSS_MmuPageSize();
+		page = (int)(long)msg.addr / USLOSS_MmuPageSize();
         /* Wait for fault to occur (receive from mailbox) */
         /* Look for free frame */
 		 /* Look for free frame */
+         
         if (vmStats.freeFrames > 0) {
             for (frame = 0; frame < vmStats.frames; frame++) {
-                if (frameTable[frame].state == UNUSED) {
-                    USLOSS_MmuMap(0, 0, frame, USLOSS_MMU_PROT_RW);
+                if (frameTable[frame].state == FUNUSED) {
+                    USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                     vmStats.freeFrames--; 
+                    memset(vmRegion, 0, USLOSS_MmuPageSize());
                     break;
                 }
             }
@@ -484,11 +479,6 @@ Pager(char *buf)
 		 
 		
 		  // First time be used
-        if (currPage->state == UNUSED) {
-            memset(vmRegion, 0, USLOSS_MmuPageSize());
-            vmStats.new++; 
-        }
-       
 
         // unmap 
         USLOSS_MmuSetAccess(frame, 0); 
@@ -498,6 +488,9 @@ Pager(char *buf)
         /* Unblock waiting (faulting) process */
         
         currProc->pageTable[page].frame = frame;
+        if (currProc->pageTable[page].state == UNUSED) {
+            vmStats.new++; 
+        }
         currProc->pageTable[page].state = INFRAME;
         
         frameTable[frame].state = FINUSE;
