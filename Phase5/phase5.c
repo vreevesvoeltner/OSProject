@@ -404,11 +404,19 @@ FaultHandler(int type /* MMU_INT */,
              void* offset  /* Offset within VM region */)
 {
    int cause,
+       i,
        frameNum = 0,
        pageNum = 0;
    FaultMsg* fmsg = &(faults[getpid() % MAXPROC]);
    ProcPtr current = &(processes[getpid() % MAXPROC]);
 
+    for (i = 0; i < MAXPAGERS; i++){
+        if (pagerPID[i] == getpid()){
+            USLOSS_Console("Pager %d (pid = %d) caused pagefault, aborting\n", i, getpid());
+            abort();
+        }
+    }
+   
    assert(type == USLOSS_MMU_INT);
    cause = USLOSS_MmuGetCause();
    assert(cause == USLOSS_MMU_FAULT);
@@ -448,7 +456,7 @@ Pager(char *buf)
     FaultMsg msg;
     char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
     Process *currProc;
-    int frame = 0,
+    int frame = -1,
         page = 0,
         i,
         access = 0;
@@ -469,28 +477,28 @@ Pager(char *buf)
             for (frame = 0; frame < vmStats.frames; frame++) {
                 if (frameTable[frame].state == FUNUSED) {
                     USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
-                    vmStats.freeFrames--; 
                     memset(vmRegion, 0, USLOSS_MmuPageSize());
+                    vmStats.freeFrames--; 
                     break;
                 }
             }
-        }
-        /* If there isn't one then use clock algorithm to
-         * replace a page (perhaps write to disk) */
-        frame = -1;
-         
-         // Look for unreferenced and dirty
-        if (frame == -1){
-            for(i = 0; i < vmStats.frames; i++){
-                USLOSS_MmuGetAccess(clockhand, &access);
-                if (access & USLOSS_MMU_REF == 0){
-                    frame = clockhand;
-                    //write stuff to disk
-                    clockhand = (clockhand + 1) % vmStats.frames;
-                    break;
-                }else{
-                    USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
-                    clockhand = (clockhand + 1) % vmStats.frames;
+        }else{
+            /* If there isn't one then use clock algorithm to
+             * replace a page (perhaps write to disk) */
+             
+             // Look for unreferenced and dirty
+            if (frame == -1){
+                for(i = 0; i < vmStats.frames; i++){
+                    USLOSS_MmuGetAccess(clockhand, &access);
+                    if (access & USLOSS_MMU_REF == 0){
+                        frame = clockhand;
+                        //write stuff to disk
+                        clockhand = (clockhand + 1) % vmStats.frames;
+                        break;
+                    }else{
+                        USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                        clockhand = (clockhand + 1) % vmStats.frames;
+                    }
                 }
             }
         }
