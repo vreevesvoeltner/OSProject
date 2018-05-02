@@ -410,7 +410,7 @@ FaultHandler(int type /* MMU_INT */,
     fmsg->pid = getpid();
     fmsg->addr = offset;
     pageNum = (int)(long)offset / USLOSS_MmuPageSize();
-    
+    USLOSS_Console("FaultHandler(): page number %d\n", pageNum);
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
     
@@ -441,17 +441,19 @@ static int
 Pager(char *buf)
 {
     FaultMsg msg;
-    int frame;
+    int frame = 0;
 
     while(1) {
         MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
+        if (isZapped())
+            break;
         /* Wait for fault to occur (receive from mailbox) */
         /* Look for free frame */
         /* If there isn't one then use clock algorithm to
          * replace a page (perhaps write to disk) */
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
-        MboxSend(msg.replyMbox, 0, sizeof(int));
+        MboxSend(msg.replyMbox, &frame, sizeof(int));
     }
     return 0;
 } /* Pager */
