@@ -420,7 +420,7 @@ Pager(char *buf)
          * replace a page (perhaps write to disk) */
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
-        MboxSend(msg.replyMbox, 0, sizeof(int));
+        MboxSend(msg.replyMbox, NULL, 0);
     }
     return 0;
 } /* Pager */
