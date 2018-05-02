@@ -356,6 +356,7 @@ void vmDestroyReal(void){
    /*
     * Kill the pagers here.
     */
+    vmRegion = NULL;
     for (i = 0; i < MAXPAGERS; i++) {
         if (pagerPID[i] == -1)
             break;
@@ -448,7 +449,8 @@ Pager(char *buf)
     char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
 	Process *currProc;
     int frame = 0,
-        page = 0;
+        page = 0,
+        i;
 	
     while(1) {
         /* Wait for fault to occur (receive from mailbox) */
@@ -476,7 +478,10 @@ Pager(char *buf)
          * replace a page (perhaps write to disk) */
 		 
 		 
-		 
+         // Look for unreferenced and dirty
+		for(i = 0; i < vmStats.frames; i++){
+        
+        }
 		
 		  // First time be used
 
