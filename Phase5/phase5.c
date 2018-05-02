@@ -416,7 +416,7 @@ FaultHandler(int type /* MMU_INT */,
    /*
     * Fill in faults[pid % MAXPROC], send it to the pagers, and wait for the
     * reply.
-    */	
+    */    
     pageNum = (int)(long)offset / USLOSS_MmuPageSize();
     fmsg->pid = getpid();
     fmsg->addr = offset;
@@ -447,23 +447,23 @@ Pager(char *buf)
 {
     FaultMsg msg;
     char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
-	Process *currProc;
+    Process *currProc;
     int frame = 0,
         page = 0,
         i,
         access = 0;
-	
+    
     while(1) {
         /* Wait for fault to occur (receive from mailbox) */
-		MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
+        MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
         if (isZapped())
             break;
         
-		currProc =  &processes[msg.pid % MAXPROC];
-		page = (int)(long)msg.addr / USLOSS_MmuPageSize();
+        currProc =  &processes[msg.pid % MAXPROC];
+        page = (int)(long)msg.addr / USLOSS_MmuPageSize();
         /* Wait for fault to occur (receive from mailbox) */
         /* Look for free frame */
-		 /* Look for free frame */
+         /* Look for free frame */
          
         if (vmStats.freeFrames > 0) {
             for (frame = 0; frame < vmStats.frames; frame++) {
@@ -477,8 +477,8 @@ Pager(char *buf)
         }
         /* If there isn't one then use clock algorithm to
          * replace a page (perhaps write to disk) */
-		frame = -1;
-		 
+        frame = -1;
+         
          // Look for unreferenced and dirty
         if (frame == -1){
             for(i = 0; i < vmStats.frames; i++){
@@ -494,13 +494,13 @@ Pager(char *buf)
                 }
             }
         }
-		
-		  // First time be used
+        
+          // First time be used
 
         // unmap 
         USLOSS_MmuSetAccess(frame, 0); 
         USLOSS_MmuUnmap(0, 0); // unmap page
-		
+        
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
         
