@@ -409,21 +409,9 @@ FaultHandler(int type /* MMU_INT */,
         fmsg->replyMbox = MboxCreate(1, sizeof(int));
     fmsg->pid = getpid();
     fmsg->addr = offset;
-    pageNum = (int)(long)offset / USLOSS_MmuPageSize();
 
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
-    
-    current->pageTable[pageNum].frame = frameNum;
-    current->pageTable[pageNum].state = INFRAME;
-    
-    frameTable[frameNum].state = FINUSE;
-    frameTable[frameNum].pid = getpid();
-    frameTable[frameNum].page = pageNum;
-    
-    USLOSS_MmuMap(TAG, pageNum, frameNum, USLOSS_MMU_PROT_RW);
-    //memset(vmRegion, 0, USLOSS_MmuPageSize()); // Will be done later by pager
-
     
 } /* FaultHandler */
 
@@ -447,18 +435,32 @@ static int
 Pager(char *buf)
 {
     FaultMsg msg;
-    int frame = 0;
+    int frame = 0,
+        page = 0;
+    ProcPtr current;
 
     while(1) {
         MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
         if (isZapped())
             break;
+            
+        current = &(processes[msg.pid]);
+        page = (int)(long)msg.addr / USLOSS_MmuPageSize();
         /* Wait for fault to occur (receive from mailbox) */
         /* Look for free frame */
         /* If there isn't one then use clock algorithm to
          * replace a page (perhaps write to disk) */
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
+        
+        current->pageTable[page].frame = frame;
+        current->pageTable[page].state = INFRAME;
+        
+        frameTable[frame].state = FINUSE;
+        frameTable[frame].pid = current->pid;
+        frameTable[frame].page = page;
+        USLOSS_MmuMap(TAG, page, frame, USLOSS_MMU_PROT_RW);
+        memset(vmRegion, 0, USLOSS_MmuPageSize()); //should be done earlier
         MboxSend(msg.replyMbox, &frame, sizeof(int));
     }
     return 0;
