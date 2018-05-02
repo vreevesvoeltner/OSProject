@@ -476,11 +476,11 @@ Pager(char *buf)
         }
         /* If there isn't one then use clock algorithm to
          * replace a page (perhaps write to disk) */
-		 
+		frame = -1;
 		 
          // Look for unreferenced and dirty
 		for(i = 0; i < vmStats.frames; i++){
-        
+            
         }
 		
 		  // First time be used
