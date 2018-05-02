@@ -422,7 +422,7 @@ FaultHandler(int type /* MMU_INT */,
     frameTable[frameNum].page = pageNum;
     
     USLOSS_MmuMap(TAG, pageNum, frameNum, USLOSS_MMU_PROT_RW);
-    memset(vmRegion, 0, USLOSS_MmuPageSize()); // Will be done later by pager
+    //memset(vmRegion, 0, USLOSS_MmuPageSize()); // Will be done later by pager
 
     
 } /* FaultHandler */
