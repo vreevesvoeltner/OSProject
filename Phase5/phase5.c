@@ -410,7 +410,7 @@ FaultHandler(int type /* MMU_INT */,
     fmsg->pid = getpid();
     fmsg->addr = offset;
     pageNum = (int)(long)offset / USLOSS_MmuPageSize();
-    
+
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
     
@@ -421,8 +421,9 @@ FaultHandler(int type /* MMU_INT */,
     frameTable[frameNum].pid = getpid();
     frameTable[frameNum].page = pageNum;
     
-    //memset(vmRegion, 0, USLOSS_MmuPageSize());
     USLOSS_MmuMap(TAG, pageNum, frameNum, USLOSS_MMU_PROT_RW);
+    memset(vmRegion, 0, USLOSS_MmuPageSize()); // Will be done later by pager
+
     
 } /* FaultHandler */
 
