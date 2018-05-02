@@ -1,8 +1,20 @@
 /*
- * skeleton.c
- *
- * This is a skeleton for phase5 of the programming assignment. It
- * doesn't do much -- it is just intended to get you started.
+ phase5.c
+Students:
+Veronica Reeves
+Thai Pham
+
+University of Arizona
+Computer Science 452
+
+Summary:
+implement a virtual memory (VM) system that supports
+demand paging. The USLOSS MMU is used to configure a region of virtual memory whose
+contents are process-specific. Using the USLOSS MMU to implement the virtual memory system.
+ The basic idea is to use the MMU to implement a single-level page table, so that each process 
+ will have its own page able for the VM region and will therefore have its own view of what the
+ VM region contains.
+ 
  */
 
 
@@ -407,9 +419,11 @@ FaultHandler(int type /* MMU_INT */,
     */
     if (fmsg->pid == -1)
         fmsg->replyMbox = MboxCreate(1, sizeof(int));
+	
+	pageNum = (int)(long)offset / USLOSS_MmuPageSize();
     fmsg->pid = getpid();
     fmsg->addr = offset;
-    pageNum = (int)(long)offset / USLOSS_MmuPageSize();
+    fmsg->pageNum = pageNum;
     
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
     MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
@@ -447,15 +461,48 @@ Pager(char *buf)
 {
     FaultMsg msg;
     int frame = 0;
+    char buffer[USLOSS_MmuPageSize()]; // buffer to read and write from disk
+	Process *currProc;
+	PTEptr currPage;
 
+	
     while(1) {
-        MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
+        /* Wait for fault to occur (receive from mailbox) */
+		MboxReceive(faultMbox, &msg, sizeof(FaultMsg));
         if (isZapped())
             break;
-        /* Wait for fault to occur (receive from mailbox) */
+        
+		currProc =  &processes[msg.pid % MAXPROC];
+		currPage = &currProc->pageTable[msg.pageNum];
+		
         /* Look for free frame */
+		 /* Look for free frame */
+        if (vmStats.freeFrames > 0) {
+            for (frame = 0; frame < vmStats.frames; frame++) {
+                if (frameTable[frame].state == UNUSED) {
+                    USLOSS_MmuMap(0, 0, frame, USLOSS_MMU_PROT_RW);
+                    vmStats.freeFrames--; 
+                    break;
+                }
+            }
+        }
         /* If there isn't one then use clock algorithm to
          * replace a page (perhaps write to disk) */
+		 
+		 
+		 
+		
+		  // First time be used
+        if (currPage->state == UNUSED) {
+            memset(vmRegion, 0, USLOSS_MmuPageSize());
+            vmStats.new++; 
+        }
+       
+
+        // unmap 
+        USLOSS_MmuSetAccess(frame, 0); 
+        USLOSS_MmuUnmap(0, 0); // unmap page
+		
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
         MboxSend(msg.replyMbox, &frame, sizeof(int));
