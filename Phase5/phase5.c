@@ -369,7 +369,9 @@ static void
 FaultHandler(int type /* MMU_INT */,
              void* offset  /* Offset within VM region */)
 {
-   int cause;
+   int cause,
+       frameNum = 0,
+       pageNum = 0;
    FaultMsg* fmsg = &(faults[getpid() % MAXPROC]);
 
    assert(type == USLOSS_MMU_INT);
@@ -380,12 +382,14 @@ FaultHandler(int type /* MMU_INT */,
     * Fill in faults[pid % MAXPROC], send it to the pagers, and wait for the
     * reply.
     */
-    
+    if (fmsg->pid == -1)
+        fmsg->replyMbox = MboxCreate(1, sizeof(int));
     fmsg->pid = getpid();
     fmsg->addr = offset;
-    fmsg->replyMbox = MboxCreate(1, 0);
+    
     MboxSend(faultMbox, fmsg, sizeof(FaultMsg));
-    MboxReceive(fmsg->replyMbox);
+    MboxReceive(fmsg->replyMbox, &frameNum, sizeof(int));
+    
 } /* FaultHandler */
 
 
@@ -416,7 +420,7 @@ Pager(char *buf)
          * replace a page (perhaps write to disk) */
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
-        MboxSend(msg.replyMbox, NULL, 0);
+        MboxSend(msg.replyMbox, 0, sizeof(int));
     }
     return 0;
 } /* Pager */
