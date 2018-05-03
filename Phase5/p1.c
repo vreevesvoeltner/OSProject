@@ -36,6 +36,7 @@ void p1_fork(int pid){
 
 void p1_switch(int old, int new){
     //USLOSS_Console("p1Switch(): old = %d, new = %d\n", old, new);
+	int r;
     if (vmRegion == NULL){
         if (DEBUG && debugflag)
             USLOSS_Console("p1_switch(): vmRegion not yet initialized.\n");
@@ -53,9 +54,9 @@ void p1_switch(int old, int new){
             for (i = 0; i < proc->numPages; i++){
                 result = USLOSS_MmuGetMap(TAG, i, &temp1, &temp2);
                 if (result != USLOSS_MMU_ERR_NOMAP){
-                    USLOSS_MmuUnmap(TAG, i);
+                    r = USLOSS_MmuUnmap(TAG, i);
                     if (DEBUG && debugflag)
-                        USLOSS_Console("p1_switch(): unmapped page %d from proc %d\n", i, old);
+                        USLOSS_Console("p1_switch(): unmapped page %d from proc %d\n remove waring%", i, old,r);
                 }
             }
         }
@@ -66,7 +67,7 @@ void p1_switch(int old, int new){
         if (proc->pageTable != NULL){
             for (i = 0; i < proc->numPages; i++){
                 if (proc->pageTable[i].state == INFRAME){
-                    USLOSS_MmuMap(TAG, i, proc->pageTable[i].frame, USLOSS_MMU_PROT_RW);
+                    r = USLOSS_MmuMap(TAG, i, proc->pageTable[i].frame, USLOSS_MMU_PROT_RW);
                     
                     if (DEBUG && debugflag)
                         USLOSS_Console("p1_switch(): mapped page %d to frame %d for proc %d \n", i, proc->pageTable[i].frame, new);
@@ -80,6 +81,7 @@ void p1_switch(int old, int new){
 } /* p1_switch */
 
 void p1_quit(int pid){
+	int r;
     if (DEBUG && debugflag)
         USLOSS_Console("p1_quit() called: pid = %d\n", pid);
         
@@ -98,7 +100,10 @@ void p1_quit(int pid){
                         diskTable[proc->pageTable[i].diskBlock].pid = -1;
                         diskTable[proc->pageTable[i].diskBlock].page = -1;
                     }
-                    USLOSS_MmuUnmap(TAG, i);
+                    r = USLOSS_MmuUnmap(TAG, i);
+					if (1==0){
+						USLOSS_Console("%d\n", r);
+					}
                     
                     frameTable[frame].state = FUNUSED;
                     frameTable[frame].frame = -1;

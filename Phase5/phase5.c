@@ -30,6 +30,7 @@ contents are process-specific. Using the USLOSS MMU to implement the virtual mem
 #include <providedPrototypes.h>
 #include <vm.h>
 #include <string.h>
+int r;
 
 static int Pager(char *buf);
 void printPageTable(int pid);
@@ -345,7 +346,7 @@ PrintStats(void)
 void vmDestroyReal(void){
 
    CheckMode();
-   USLOSS_MmuDone();
+   r = USLOSS_MmuDone();
    
     int i,
         status;
@@ -408,8 +409,10 @@ FaultHandler(int type /* MMU_INT */,
        frameNum = 0,
        pageNum = 0;
    FaultMsg* fmsg = &(faults[getpid() % MAXPROC]);
-   ProcPtr current = &(processes[getpid() % MAXPROC]);
-
+   //ProcPtr current = &(processes[getpid() % MAXPROC]);
+   if (1==0){
+		USLOSS_Console("%d",pageNum);
+	}
     for (i = 0; i < MAXPAGERS; i++){
         if (pagerPID[i] == getpid()){
             USLOSS_Console("Pager %d (pid = %d) caused pagefault, aborting\n", i, getpid());
@@ -476,7 +479,7 @@ Pager(char *buf)
         if (vmStats.freeFrames > 0) {
             for (frame = 0; frame < vmStats.frames; frame++) {
                 if (frameTable[frame].state == FUNUSED) {
-                    USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+                   r =  USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                     vmStats.freeFrames--; 
                     break;
                 }
@@ -489,7 +492,7 @@ Pager(char *buf)
 				if (frame == -1){
 					for(i = 0; i < vmStats.frames; i++){
 						//MboxSend(clockhandMbox, 0, sizeof(int));
-						USLOSS_MmuGetAccess(clockhand, &access);
+						r = USLOSS_MmuGetAccess(clockhand, &access);
 						if (access == 0){
 							frame = clockhand;
 							other = &(processes[frameTable[frame].pid]);
@@ -497,7 +500,7 @@ Pager(char *buf)
 							other->pageTable[frameTable[frame].page].state = INCORE;
 							other->pageTable[frameTable[frame].page].frame = -1;
 							clockhand = (clockhand + 1) % vmStats.frames;
-							USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+							r = USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);	
 							break;
 						}else {
 							clockhand = (clockhand + 1) % vmStats.frames;
@@ -509,7 +512,7 @@ Pager(char *buf)
                  // Look for unreferenced and dirty
                 if (frame == -1){
                     for(i = 0; i < vmStats.frames; i++){
-                        USLOSS_MmuGetAccess(clockhand, &access);
+                        r = USLOSS_MmuGetAccess(clockhand, &access);
                         //if ((access & USLOSS_MMU_REF) == 0){
 						if (access == 1){
                             frame = clockhand;
@@ -522,10 +525,10 @@ Pager(char *buf)
                             
                             //vmStats.pageOuts++;
                             clockhand = (clockhand + 1) % vmStats.frames;
-                            USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+                            r  = USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                             break;
                         }else{
-                            USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                            r = USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
                             clockhand = (clockhand + 1) % vmStats.frames;
                         }
                     }
@@ -546,8 +549,8 @@ Pager(char *buf)
         }
 
         // unmap 
-        USLOSS_MmuSetAccess(frame, 0); 
-        USLOSS_MmuUnmap(0, 0); // unmap page
+        r = USLOSS_MmuSetAccess(frame, 0); 
+        r = USLOSS_MmuUnmap(0, 0); // unmap page
         
         /* Load page into frame from disk, if necessary */
         /* Unblock waiting (faulting) process */
@@ -558,8 +561,11 @@ Pager(char *buf)
         frameTable[frame].state = FINUSE;
         frameTable[frame].pid = currProc->pid;
         frameTable[frame].page = page;
-        USLOSS_MmuMap(TAG, page, frame, USLOSS_MMU_PROT_RW);
+        r = USLOSS_MmuMap(TAG, page, frame, USLOSS_MMU_PROT_RW);
         MboxSend(msg.replyMbox, &frame, sizeof(int));
+		if (1==0){
+			USLOSS_Console("%d",r);
+		}
     }
     return 0;
 } /* Pager */
