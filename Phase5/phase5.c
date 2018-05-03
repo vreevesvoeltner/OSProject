@@ -513,24 +513,48 @@ Pager(char *buf)
                 if (frame == -1){
                     for(i = 0; i < vmStats.frames; i++){
                         r = USLOSS_MmuGetAccess(clockhand, &access);
-                        //if ((access & USLOSS_MMU_REF) == 0){
-						if (access == 1){
+                        if ((access & USLOSS_MMU_REF) == 0){
+                            char* buff[USLOSS_MmuPageSize()];
+                            int d;
+                            PTEptr otherPage;
+                            DTEptr otherDisk;
+                            
                             frame = clockhand;
                             other = &(processes[frameTable[frame].pid]);
-                            //write stuff to disk
+                            otherPage = &(other->pageTable[frameTable[frame].page]);
                             
+                            r  = USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+                            //write stuff to disk
+                            if (otherPage->diskBlock == -1) {
+                                if (vmStats.freeDiskBlocks == 0) {
+                                    if (DEBUG5)
+                                        USLOSS_Console("Pager: no free disk blocks, halting... \n");
+                                    USLOSS_Halt(1);
+                                }
+                                for (d = 0; d < vmStats.diskBlocks; d++){
+                                    if (diskTable[d].pid == -1){
+                                        otherPage->diskBlock = d;
+                                        diskTable[d].pid = other->pid;
+                                        diskTable[d].page = frameTable[frame].page;
+                                        break;
+                                    }
+                                }
+                            }
+                            /*
+                            otherDisk = &(diskTable[otherPage->diskBlock]);
+                            memcpy(&buff, vmRegion, USLOSS_MmuPageSize());
+                            diskWriteReal(SWAPDISK, otherDisk->track, otherDisk->sector, USLOSS_MmuPageSize()/USLOSS_DISK_SECTOR_SIZE, &buff);
+                            */
                             // set old page's info
                             other->pageTable[frameTable[frame].page].state = INCORE;
                             other->pageTable[frameTable[frame].page].frame = -1;
                             
-                            //vmStats.pageOuts++;
+                            vmStats.pageOuts++;
                             clockhand = (clockhand + 1) % vmStats.frames;
-							
-                            r  = USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                             break;
                         }else{
-							r = USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
-                           clockhand = (clockhand + 1) % vmStats.frames;
+                            r = USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                            clockhand = (clockhand + 1) % vmStats.frames;
                         }
                     }
                 }
@@ -546,7 +570,9 @@ Pager(char *buf)
             //USLOSS_Console("Pager(): Getting contents from disk not yet done, setting to 0 for now\n");
             memset(vmRegion, 0, USLOSS_MmuPageSize());
             //TODO: get page contents from disk
-            //vmStats.pageIns++;
+            if (currProc->pageTable[page].diskBlock != -1){
+                vmStats.pageIns++;
+            }
         }
 
         // unmap 
