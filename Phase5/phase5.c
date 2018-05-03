@@ -527,7 +527,7 @@ Pager(char *buf)
                             if (otherPage->diskBlock == -1) {
                                 if (vmStats.freeDiskBlocks == 0) {
                                     if (DEBUG5)
-                                        USLOSS_Console("Pager: no free disk blocks, halting... \n");
+                                        USLOSS_Console("Pager: no free disk blocks, halting... \n %d", otherDisk);
                                     USLOSS_Halt(1);
                                 }
                                 for (d = 0; d < vmStats.diskBlocks; d++){
