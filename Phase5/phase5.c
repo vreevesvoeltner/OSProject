@@ -486,11 +486,32 @@ Pager(char *buf)
             /* If there isn't one then use clock algorithm to
              * replace a page (perhaps write to disk) */
             for (int j = 0; j < 2; j++){
+				if (frame == -1){
+					for(i = 0; i < vmStats.frames; i++){
+						//MboxSend(clockhandMbox, 0, sizeof(int));
+						USLOSS_MmuGetAccess(clockhand, &access);
+						if (access == 0){
+							frame = clockhand;
+							other = &(processes[frameTable[frame].pid]);
+							// set old page's info
+							other->pageTable[frameTable[frame].page].state = INCORE;
+							other->pageTable[frameTable[frame].page].frame = -1;
+							clockhand = (clockhand + 1) % vmStats.frames;
+							USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
+							break;
+						}else {
+							clockhand = (clockhand + 1) % vmStats.frames;
+						}
+						//MboxReceive(clockhandMbox, 0, sizeof(int));
+					}	
+				}
+				
                  // Look for unreferenced and dirty
                 if (frame == -1){
                     for(i = 0; i < vmStats.frames; i++){
                         USLOSS_MmuGetAccess(clockhand, &access);
-                        if ((access & USLOSS_MMU_REF) == 0){
+                        //if ((access & USLOSS_MMU_REF) == 0){
+						if (access == 1){
                             frame = clockhand;
                             other = &(processes[frameTable[frame].pid]);
                             //write stuff to disk
@@ -499,7 +520,7 @@ Pager(char *buf)
                             other->pageTable[frameTable[frame].page].state = INCORE;
                             other->pageTable[frameTable[frame].page].frame = -1;
                             
-                            vmStats.pageOuts++;
+                            //vmStats.pageOuts++;
                             clockhand = (clockhand + 1) % vmStats.frames;
                             USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                             break;
@@ -517,11 +538,11 @@ Pager(char *buf)
         if (currProc->pageTable[page].state == UNUSED) {
             vmStats.new++; 
             memset(vmRegion, 0, USLOSS_MmuPageSize());
-        }else{
+        }else {
             //USLOSS_Console("Pager(): Getting contents from disk not yet done, setting to 0 for now\n");
             memset(vmRegion, 0, USLOSS_MmuPageSize());
             //TODO: get page contents from disk
-            vmStats.pageIns++;
+            //vmStats.pageIns++;
         }
 
         // unmap 
