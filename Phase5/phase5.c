@@ -525,11 +525,12 @@ Pager(char *buf)
                             
                             //vmStats.pageOuts++;
                             clockhand = (clockhand + 1) % vmStats.frames;
+							
                             r  = USLOSS_MmuMap(TAG, 0, frame, USLOSS_MMU_PROT_RW);
                             break;
                         }else{
-                            r = USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
-                            clockhand = (clockhand + 1) % vmStats.frames;
+							r = USLOSS_MmuSetAccess(clockhand, access & USLOSS_MMU_DIRTY);
+                           clockhand = (clockhand + 1) % vmStats.frames;
                         }
                     }
                 }
@@ -564,7 +565,7 @@ Pager(char *buf)
         r = USLOSS_MmuMap(TAG, page, frame, USLOSS_MMU_PROT_RW);
         MboxSend(msg.replyMbox, &frame, sizeof(int));
 		if (1==0){
-			USLOSS_Console("%d",r);
+			USLOSS_Console("%d%s",r,buffer);
 		}
     }
     return 0;
