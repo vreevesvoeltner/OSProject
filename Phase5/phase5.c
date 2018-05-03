@@ -228,8 +228,7 @@ void *vmInitReal(int mappings, int pages, int frames, int pagers){
         frameTable[i].state = FUNUSED;
         frameTable[i].frame = 0;
         frameTable[i].page = 0;
-        frameTable[i].pid = -1;      
-        frameTable[i].next = NULL;
+        frameTable[i].pid = -1;
     }
     clockhand = 0;
     clockhandMbox = MboxCreate(1, 0);
@@ -540,11 +539,10 @@ Pager(char *buf)
                                     }
                                 }
                             }
-                            /*
                             otherDisk = &(diskTable[otherPage->diskBlock]);
                             memcpy(&buff, vmRegion, USLOSS_MmuPageSize());
-                            diskWriteReal(SWAPDISK, otherDisk->track, otherDisk->sector, USLOSS_MmuPageSize()/USLOSS_DISK_SECTOR_SIZE, &buff);
-                            */
+                            //diskWriteReal(SWAPDISK, otherDisk->track, otherDisk->sector, USLOSS_MmuPageSize()/USLOSS_DISK_SECTOR_SIZE, &buff);
+                            
                             // set old page's info
                             other->pageTable[frameTable[frame].page].state = INCORE;
                             other->pageTable[frameTable[frame].page].frame = -1;

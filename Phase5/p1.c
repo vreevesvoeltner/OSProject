@@ -27,7 +27,6 @@ void p1_fork(int pid){
         proc->pageTable[i].state = UNUSED;
         proc->pageTable[i].frame = -1;
         proc->pageTable[i].diskBlock = -1;
-        proc->pageTable[i].nextPage = NULL;
     }
     
     if (DEBUG && debugflag)
@@ -115,7 +114,6 @@ void p1_quit(int pid){
                 proc->pageTable[i].state = UNUSED;
                 proc->pageTable[i].frame = -1;
                 proc->pageTable[i].diskBlock = -1;
-                proc->pageTable[i].nextPage = NULL;
             }
         }
         free(proc->pageTable);
